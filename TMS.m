@@ -51,20 +51,20 @@ classdef TMS < handle
     % Realized di/dt in A/µs, as shown on the device
     didt(1,2)
     
-    % One of "Monophasic" "Biphasic" or "BiphasicBurst"
+    % Wave form: "Monophasic" "Biphasic" or "Biphasic Burst"
     waveform(1,1) = "Biphasic"
     
     % Current direction: "Normal" or "Reverse"
     currentDirection(1,1) = "Normal"
     
     % Number of pulses in a burst: 2 to 5
-    burstPulses(1,1)=2
+    burstPulses(1,1) = 2
     
     % Pulse B/A Ratio. Will be adjusted to supported value
-    BARatio(1,1) =1    
+    BARatio(1,1) = 1    
 
     % Inter pulse interval in ms. Will be adjusted to supported value
-    IPI(1,1) =10
+    IPI(1,1) = 10
     
     % Timing control options
     TimingControl(1,1) = "Sequence"    
@@ -79,8 +79,17 @@ classdef TMS < handle
     info = struct("Model", "", "Mode", "", "CoilType", "")
   end
   properties
-    % Parameters related train: settable directly
-    train = trainParams
+    % Parameters related to train: settable directly
+    train = struct( ...
+      'RepRate', 1, ... % Number of pulses per second in each train
+      'PulsesInTrain', 5, ... % Number of pulses or bursts in each train
+      'NumberOfTrains', 2, ... % Number of Trains in the sequence
+      'ITI', 1, ... % Inter Train Interval in seconds
+      'PriorWarningSound', false, ... % sound warning before each train?
+      'RampUp', 1, ... % A factor 0.7-1.0 setting the level for the first Train
+      'RampUpTrains', 10, ... % Number of trains during which the Ramp up function is active
+      'isRunning', false, ... % Indicate if train sequence is running
+      'TotalTime', "00:09") % Total time to run the sequence, based on train parameters
   end
 
   methods
@@ -233,17 +242,16 @@ classdef TMS < handle
 
     function save(self, fileName)
       % T.save("./myParams.mat"); 
-      % Save parameters to a file for future sessons to load
+      % Save parameters to a file for future sessions to load
       if nargin<2 || isempty(fileName)
         [fNam, pNam] = uiputfile("*.mat", "Specify a file to save", self.filename+".mat");
         if isnumeric(fNam), return; end
         fileName = fullfile(pNam, fNam);
       end
       O = warning("off", 'MATLAB:structOnObject');
-      cln = onCleanup(@()warning(O));
       T0 = struct(self);
+      warning(O);
       T0 = rmfield(T0, 'port');
-      T0.train = struct(T0.train);  % wont rely on trainParams, also for load
       save(fileName, '-struct', 'T0');
     end
 
@@ -265,7 +273,7 @@ classdef TMS < handle
         self.BARatio = T0.BARatio;
         self.TimingControl = T0.TimingControl;
         self.delays = T0.delays;
-        self.train = T0.train; % setter assigns only 5 fields
+        self.train = T0.train;
       else % .CG3 file
         ch = fileread(fileName);
         getval = @(k)str2double(regexp(ch,"(?<="+k+"=)\d+","match","once"));
@@ -273,7 +281,7 @@ classdef TMS < handle
             getval('Wave Form') 5-getval('Burst Pulses')];
         self.IPI = getval('Inter Pulse Interval')/10;
         self.BARatio = getval('Pulse BA Ratio')/100;
-        self.TimingControl = self.TCs{getval('Timing Control')+1};
+        self.TimingControl = self.TCs(getval('Timing Control')+1);
         self.train.RepRate = getval('Rep Rate')/10;
         self.train.PulsesInTrain = getval('Pulses in train');
         self.train.NumberOfTrains = getval('Number of Trains');
@@ -291,7 +299,7 @@ classdef TMS < handle
       self.setTrain;
     end
 
-    function set.train(self, S) % S can be struct or trainParams
+    function set.train(self, S)
       d = setdiff(fieldnames(S), fieldnames(self.train));
       if ~isempty(d), error("Unknown parameters: %s", strjoin(d, ', ')); end
       if isfield(S, 'RepRate') && self.train.RepRate ~= S.RepRate
@@ -333,6 +341,9 @@ classdef TMS < handle
       if isfield(S, 'isRunning') && ~isstruct(S)
         self.train.isRunning = S.isRunning; % assigning inside class only
       end
+      secs = ((self.train.PulsesInTrain-1) / self.train.RepRate+self.train.ITI) ...
+             * self.train.NumberOfTrains - self.train.ITI;
+      self.train.TotalTime = string(duration(0, 0, secs, "Format", "mm:ss"));
       try TMS_GUI("update"); catch, end % update TotalTime
     end    
   end
