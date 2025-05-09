@@ -202,7 +202,7 @@ classdef TMS < handle
 
     function setBARatio(self, ratio)
       % T.setBARatio(1); % set Pulse B/A Ratio
-      if nargin<2, error("Need to provide IPI input"); end
+      if nargin<2, error("Need to provide BARatio input"); end
       [self.BARatio, dev] = self.closestVal(ratio, self.BARatios);
       if dev>0.1, warning("Actual BARatio is %g", self.BARatio); end
       self.setParam9;
