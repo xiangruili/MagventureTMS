@@ -1,13 +1,13 @@
 function motorThreshold(startAmp)
 % Start to measure motor threshold.
 %  The optional input is the start amplitude for the threshold estimation. If
-%  not provided, the current amplitude on the stimluator will be used if it is
-%  greater than 30, otherwise 60 will be the start amplitude.
+%  not provided, the current amplitude on the stimulator will be used if it is
+%  greater than 30, otherwise 60 will be the starting amplitude.
 % 
-% When the popup window asks if motor response is seen, click "Yes" or "No", and
-% the amplitude will be adjusted accordingly for next trial. In case it is
+% When the popup dialog asks if you see motor response, click "Yes" or "No", and
+% the amplitude will be adjusted accordingly for the next trial. In case you are
 % unsure if there is a response, or the stimulation target needs to be adjusted,
-% click "Retry" to keep the amplitude unchanged for next trial. The code will
+% click "Retry" to keep the amplitude unchanged for the next trial. The code will
 % set the default choice based on the trace, and you can press Enter key if the
 % default choice is correct.
 % 
