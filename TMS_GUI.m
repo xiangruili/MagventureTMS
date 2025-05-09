@@ -7,28 +7,25 @@ function TMS_GUI(varargin)
 % The control panel contains help information for each parameter and button. By
 % hovering mouse on an item for a second, the help will show up.
 % 
-% The Coil Status panel is information only. The coil temperature and di/dtIt
-% will update when stimulation is applied. 
+% The Coil Status panel is information only. The coil temperature and di/dt will
+% update when stimulation is applied.
 % 
 % The Basic Control contains Amplitude, Waveform and Current Direction. The
-% Burst Parameter panel is active only for Waveform of Biphysic Burst.
+% Burst Parameter panel is active only for Waveform of Biphasic Burst.
 % 
 % Any Basic and Burst parameter change will be effective immediately onto the
 % stimulator. However, the Train parameters will be sent only after Set Train
 % button is pressed.
 %
-% The "Motor Threshold" button will start motor threshold estimate. It will
-% start with amplitude of 50% unless you specify a start value. After each
-% trial, it will ask if it elicits motor response. You answer Yes or No based on
-% the Biopac monitor or observation of thumb twitch. If you missed the
-% observation or the coil was not positioned ideally, you can answer "Again" to
-% skip the trial. The amplitude will be automatically adjusted for next trail,
-% and the procedure will stop when a converging threshold is found.
+% The "Motor Threshold" button will start motor threshold estimate. See help for
+% motorThreshold for details.
 %
 % From File menu, one can save all the parameters to a file, so they can be
 % loaded for the future sessions. The "Load" function will send all parameters
 % to the stimulator. Then once the desired amplitude is set, it is ready to
 % fire a "Single pulse" or "Start Train".
+% 
+%  See also motorThreshold
  
 % 250106 xiangrui.li@gmail.com
  
