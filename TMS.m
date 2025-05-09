@@ -27,13 +27,12 @@ classdef TMS < handle
     TCs = ["Sequence" "External Trig" "Ext Seq. Start" "Ext Seq. Cont"]
     pages = ["Main" "Timing" "Trig" "Config" "" "Download" "Protocol" "MEP" ""  "" "" "" ...
          "Service" "" "Treatment" "Treat Select" "Service2" "" "Calculator"]
-    IPIs = flip([0.5:0.1:10 10.5:0.5:20 21:100]) % for X100 BiphasicBurst
+    IPIs = flip([0.5:0.1:10 10.5:0.5:20 21:100]) % for X100 "Biphasic Burst"
     BARatios = 0.2:0.05:5;
   end
   properties (Hidden, SetAccess=private)
     port(1,1)
     raw9(1,9) uint8 % store parameters for setParam9()
-    debug(1,1) struct % for debug
   end
   properties (SetAccess=private)
     % File name from which the parameters are loaded
@@ -73,7 +72,7 @@ classdef TMS < handle
     delays(1,3)
 
     % MEP related parameters
-    % MEP(1,1) struct
+    MEP(1,1) struct
 
     % Some info about the stimulator, like Model, SerialNo, Mode, etc.
     info = struct("Model", "", "Mode", "", "CoilType", "")
@@ -175,7 +174,7 @@ classdef TMS < handle
     end
 
     function setWaveform(self, wvForm)
-      % T.setWaveform("Biphasic"); % "Monophasic" "Biphasic" or "BiphasicBurst"
+      % T.setWaveform("Biphasic"); % "Monophasic" "Biphasic" or "Biphasic Burst"
       if nargin<2 || ~ismember(wvForm, self.wvForms)
         error("Waveform must be one of %s.", join(self.wvForms, ', '));
       end
@@ -218,7 +217,7 @@ classdef TMS < handle
     end
 
     function setDelay(self, in3)
-      % T.setDelay([0 0 100]); % set 3 delays: in, out trigger and charge dealy in ms.
+      % T.setDelay([0 0 100]); % set 3 delays: in, out trigger and charge delay in ms.
       %  delayInputTrig: delay to start stimulation after trigger in
       %  delayOutputTrig: delay to send trigger after stimulation (can be negative)
       %  chargeDelay: delay to wait before recharging
@@ -232,7 +231,7 @@ classdef TMS < handle
     end
 
     function resync(self)
-      % Update the parameters from stimuluator, in case changed at stimulator
+      % Update the parameters from stimulator, in case changes at stimulator
       self.serialCmd(5); % basic info
       self.serialCmd([9 0]); % burst parameters etc
       self.serialCmd([10 0]); % delays
@@ -282,13 +281,14 @@ classdef TMS < handle
         self.IPI = getval('Inter Pulse Interval')/10;
         self.BARatio = getval('Pulse BA Ratio')/100;
         self.TimingControl = self.TCs(getval('Timing Control')+1);
-        self.train.RepRate = getval('Rep Rate')/10;
-        self.train.PulsesInTrain = getval('Pulses in train');
-        self.train.NumberOfTrains = getval('Number of Trains');
-        self.train.ITI = getval('Inter Train Interval')/10;
-        self.train.PriorWarningSound = getval('Prior Warning Sound');
-        self.train.RampUp = getval('RampUp')/100;
-        self.train.RampUpTrains = getval('RampUpTrains');
+        S.RepRate = getval('Rep Rate')/10;
+        S.PulsesInTrain = getval('Pulses in train');
+        S.NumberOfTrains = getval('Number of Trains');
+        S.ITI = getval('Inter Train Interval')/10;
+        S.PriorWarningSound = getval('Prior Warning Sound');
+        S.RampUp = getval('RampUp')/100;
+        S.RampUpTrains = getval('RampUpTrains');
+        self.train = S;
         % getval('Trig Output'); % 1
         self.delays = [getval('Delay Input')/10 getval('Delay Output')/10 getval('Charge Delay')];
         % getval('Auto Discharge Time'); % 5 / 10
@@ -338,20 +338,20 @@ classdef TMS < handle
         self.train.RampUpTrains = val;
         if dev>0.1, warning("RampUpTrains adjusted to %i", val); end
       end
-      if isfield(S, 'isRunning') && ~isstruct(S)
+      if isfield(S, 'isRunning')
         self.train.isRunning = S.isRunning; % assigning inside class only
       end
-      secs = ((self.train.PulsesInTrain-1) / self.train.RepRate+self.train.ITI) ...
-             * self.train.NumberOfTrains - self.train.ITI;
+      S = self.train;
+      secs = ((S.PulsesInTrain-1) / S.RepRate + S.ITI) * S.NumberOfTrains - S.ITI;
       self.train.TotalTime = string(duration(0, 0, secs, "Format", "mm:ss"));
-      try TMS_GUI("update"); catch, end % update TotalTime
+      try TMS_GUI("update"); catch, end
     end    
   end
 
   methods (Hidden)
     function serialCmd(self, bytes)
       self.port.write([254 numel(bytes) bytes self.CRC8(bytes) 255], 'uint8');
-      self.debug = struct('dt', datetime, 'sent', bytes, 'received', []);
+      % fprintf('Sent: %s\n', sprintf('%3X', bytes)); % for debug
     end
 
     function setParam9(self) % Shortcut to set parameters via commandID=9
@@ -362,7 +362,7 @@ classdef TMS < handle
     end
 
     function decodeBytes(self)
-      % Update parameters from stimulator: 8-byte callback
+      % Update parameters from stimulator: 8+ bytes callback
       % TrigOutput enable/disable, CoilTypeDisplay on/off not in b(3) of 5/9/10/11/12
       n = 0;
       while 1
@@ -379,13 +379,10 @@ classdef TMS < handle
         if b(end)~=255 || b(end-1)~=self.CRC8(b(3:end-2))
           warning("Corrupted data?"); disp(b); continue;
         end
-        if isempty(self.debug.received)
-          self.debug.dt = seconds(datetime-self.debug.dt);
-          self.debug.received = b(3:end-2);
-        end
+        % fprintf('%s\n', sprintf('%3X', b(3:end-2))); % for debug
         iBits = @(i,j)bitget(b(j),i)*2.^(0:numel(i)-1)'+1;
         switch b(3)
-          case {0 5} % Localite sends 5 twice a seocnd
+          case {0 5} % Localite sends 5 twice a second
             self.info.Mode = self.modes(iBits(1:2, 4));
             self.waveform = self.wvForms(iBits(3:4, 4));
             self.enabled = bitget(b(4), 5);
@@ -393,7 +390,7 @@ classdef TMS < handle
             self.info.SerialNo = b(5:7)*256.^[2 1 0]';
             self.temperature = b(8);
             try self.info.CoilType = self.coils(b(9));
-            catch, self.info.CoilType = string(b(9));
+            catch, self.info.CoilType = string(b(9)); % not in container
             end
             self.amplitude = b(10:11);
           case 1
@@ -414,10 +411,10 @@ classdef TMS < handle
             self.waveform = self.wvForms(iBits(3:4, 6));
             self.enabled = bitget(b(6), 5);
             self.info.Model = self.models(iBits(6:8, 6));
-          % case 4 % MEP
-          %   self.MEP.maxAmplitude = b(4:7)*256.^(3:-1:0)'; % in µV
-          %   self.MEP.minAmplitude = b(8:11)*256.^(3:-1:0)';
-          %   self.MEP.maxTime = b(12:15)*256.^(3:-1:0)'; % in µs
+          case 4 % MEP
+            self.MEP.maxAmplitude = b(4:7)*256.^(3:-1:0)'; % in µV
+            self.MEP.minAmplitude = b(8:11)*256.^(3:-1:0)';
+            self.MEP.maxTime = b(12:15)*256.^(3:-1:0)'; % in µs
           case 8
             self.train.isRunning = b(5);
             self.info.Mode = self.modes(iBits(1:2, 6));
@@ -440,14 +437,15 @@ classdef TMS < handle
             self.delays = [b(5:6)*[256 1]'/10 outDelay b(9:10)*[256 1]'];
           case 11
             self.TimingControl = self.TCs(b(5)+1);
-            self.train.RepRate = b(6:7)*[256 1]'/10;
-            self.train.PulsesInTrain = b(8:9)*[256 1]';
-            self.train.NumberOfTrains = b(10:11)*[256 1]';
-            self.train.ITI = b(12:13)*[256 1]'/10;
-            self.train.PriorWarningSound = logical(b(14));
-            self.train.RampUp = b(15)/100;
-            self.train.RampUpTrains = b(16);
-          case 12 % not used so far
+            S.RepRate = b(6:7)*[256 1]'/10;
+            S.PulsesInTrain = b(8:9)*[256 1]';
+            S.NumberOfTrains = b(10:11)*[256 1]';
+            S.ITI = b(12:13)*[256 1]'/10;
+            S.PriorWarningSound = b(14);
+            S.RampUp = b(15)/100;
+            S.RampUpTrains = b(16);
+            self.train = S;
+          case 12
             % self.train.NumberOfTrains = b(4:5)*[256 1]';
             % b(7:9)*256.^[2 1 0]': PulsesInTrain * NumberOfTrains
             self.info.nStimuli = b(12:13)*[256 1]'; % b(10:11) too?
@@ -457,7 +455,7 @@ classdef TMS < handle
       try TMS_GUI("update"); catch, end
     end
 
-    % Override/hide inherited methods: cleaner for usage & doc
+    % Override to hide inherited methods: cleaner for usage & doc
     function lh = addlistener(varargin); lh=addlistener@handle(varargin{:}); end
     function lh = listener(varargin); lh=listener@handle(varargin{:}); end
     function p = findprop(varargin); p = findprop@handle(varargin{:}); end
