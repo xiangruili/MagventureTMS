@@ -23,16 +23,17 @@ classdef TMS < handle
     wvForms = ["Monophasic" "Biphasic" "Halfsine" "Biphasic Burst"]
     models = ["R30" "X100" "R30+Option" "X100+Option" "R30+Option+Mono" "MST"];
     modes = ["Standard" "Power" "Twin" "Dual"];
-    coils = containers.Map([60 72], {"Cool-B65" "C-B60"}); % can add more
     TCs = ["Sequence" "External Trig" "Ext Seq. Start" "Ext Seq. Cont"]
     pages = ["Main" "Timing" "Trig" "Config" "" "Download" "Protocol" "MEP" ""  "" "" "" ...
          "Service" "" "Treatment" "Treat Select" "Service2" "" "Calculator"]
-    IPIs = flip([0.5:0.1:10 10.5:0.5:20 21:100]) % for X100 "Biphasic Burst"
-    BARatios = 0.2:0.05:5;
   end
-  properties (Hidden, SetAccess=private)
+  properties (Hidden, SetAccess=private, Transient)
     port(1,1)
     raw9(1,9) uint8 % store parameters for setParam9()
+  end
+  properties (Hidden, Dependent, Transient)
+    IPIs
+    RATEs
   end
   properties (SetAccess=private)
     % File name from which the parameters are loaded
@@ -49,6 +50,9 @@ classdef TMS < handle
     
     % Realized di/dt in A/µs, as shown on the device
     didt(1,2)
+    
+    % Stimulator mode: "Standard" "Power" "Twin" or "Dual"
+    mode(1,1) = "Standard"
     
     % Wave form: "Monophasic" "Biphasic" or "Biphasic Burst"
     waveform(1,1) = "Biphasic"
@@ -74,8 +78,8 @@ classdef TMS < handle
     % MEP related parameters
     MEP(1,1) struct
 
-    % Some info about the stimulator, like Model, SerialNo, Mode, etc.
-    info = struct("Model", "", "Mode", "", "CoilType", "")
+    % Some info about the stimulator, like Model, SerialNo, etc.
+    info = struct("Model", "X100?", "CoilType", "")
   end
   properties
     % Parameters related to train: settable directly
@@ -164,6 +168,17 @@ classdef TMS < handle
       self.serialCmd([11 0]); % sync
     end
 
+    function setMode(self, mode)
+      % T.setMode("Standard"); % "Standard" "Power" "Twin" or "Dual"
+      if nargin<2 || ~ismember(mode, self.modes)
+        error('mode must be "Standard", "Power", "Twin" or "Dual".');
+      elseif self.raw9(2)<2 && self.info.Model~="Standard" % without Option
+        error('Only "Standard" mode is supported for %s', self.info.Model);
+      end
+      self.raw9(2) = find(mode==self.modes)-1;
+      self.setParam9;
+    end
+
     function setCurrentDirection(self, curDir)
       % T.setCurrentDirection("Normal"); % "Normal" or "Reverse"
       if nargin<2 || ~ismember(curDir, self.curDirs)
@@ -174,11 +189,10 @@ classdef TMS < handle
     end
 
     function setWaveform(self, wvForm)
-      % T.setWaveform("Biphasic"); % "Monophasic" "Biphasic" or "Biphasic Burst"
+      % T.setWaveform("Biphasic"); % "Monophasic" "Biphasic" "Halfsine" or "Biphasic Burst"
       if nargin<2 || ~ismember(wvForm, self.wvForms)
         error("Waveform must be one of %s.", join(self.wvForms, ', '));
       end
-      if wvForm=="Halfsine", error("Halfsine not supported for model X100"); end
       self.raw9(4) = find(wvForm==self.wvForms)-1;
       self.setParam9;
     end
@@ -203,7 +217,7 @@ classdef TMS < handle
     function setBARatio(self, ratio)
       % T.setBARatio(1); % set Pulse B/A Ratio
       if nargin<2, error("Need to provide BARatio input"); end
-      [self.BARatio, dev] = self.closestVal(ratio, self.BARatios);
+      [self.BARatio, dev] = self.closestVal(ratio, 0.2:0.05:5);
       if dev>0.1, warning("Actual BARatio is %g", self.BARatio); end
       self.setParam9;
     end
@@ -247,9 +261,7 @@ classdef TMS < handle
         if isnumeric(fNam), return; end
         fileName = fullfile(pNam, fNam);
       end
-      O = warning("off", 'MATLAB:structOnObject');
-      T0 = struct(self);
-      warning(O);
+      O = warning("off", 'MATLAB:structOnObject'); T0 = struct(self); warning(O);
       T0 = rmfield(T0, 'port');
       save(fileName, '-struct', 'T0');
     end
@@ -299,14 +311,49 @@ classdef TMS < handle
       self.setTrain;
     end
 
+    function rates = get.RATEs(self)
+      rates = [0.1:0.1:1 2:100];
+      if self.info.Model == "X100"
+        if self.waveform == "Biphasic Burst", rates = [0.1:0.1:1 2:20]; end
+      elseif self.info.Model == "X100+Option"
+        if self.mode == "Twin" ||  self.mode == "Dual"
+          if self.waveform == "Monophasic", rates = [0.1:0.1:1 2:5];
+          else, rates = [0.1:0.1:1 2:50];
+          end
+        else
+          if self.waveform == "Biphasic Burst", rates = [0.1:0.1:1 2:20]; end
+        end
+      elseif self.info.Model == "R30"
+        rates = [0.1:0.1:1 2:30];
+      elseif self.info.Model == "R30+Option"
+        if self.mode == "Twin" ||  self.mode == "Dual"
+          rates = [0.1:0.1:1 2:5];
+        else
+          rates = [0.1:0.1:1 2:30];
+        end
+      else
+        warning("Parameters for %s is supported for now.", self.info.Model);
+      end
+    end
+
+    function IPIs = get.IPIs(self)
+      IPIs = flip([0.5:0.1:10 10.5:0.5:20 21:100]);
+      if self.info.Model == "X100" || self.info.Model == "R30", return;
+      elseif self.info.Model == "X100+Option" || self.info.Model == "R30+Option"
+        if self.mode == "Twin" ||  self.mode == "Dual"
+          if self.waveform == "Monophasic", i0 = 2; else, i0 = 1; end
+          IPIs = flip([i0:0.1:10 10.5:0.5:20 21:100 110:10:500 550:50:1000 1100:100:3000]);
+        end
+      else
+        warning("Parameters for %s is supported for now.", self.info.Model);
+      end
+    end
+
     function set.train(self, S)
       d = setdiff(fieldnames(S), fieldnames(self.train));
       if ~isempty(d), error("Unknown parameters: %s", strjoin(d, ', ')); end
       if isfield(S, 'RepRate') && self.train.RepRate ~= S.RepRate
-        if self.waveform=="Biphasic Burst", rates = [0.1:0.1:1 2:20]; %#ok
-        else, rates = [0.1:0.1:1 2:100];
-        end
-        [val, dev] = self.closestVal(S.RepRate, rates); % pps
+        [val, dev] = self.closestVal(S.RepRate, self.RATEs); %#ok pps
         self.train.RepRate = val;
         if dev>0.1, warning("RepRate adjusted to %g", val); end
       end
@@ -383,31 +430,32 @@ classdef TMS < handle
         iBits = @(i,j)bitget(b(j),i)*2.^(0:numel(i)-1)'+1;
         switch b(3)
           case {0 5} % Localite sends 5 twice a second
-            self.info.Mode = self.modes(iBits(1:2, 4));
+            self.mode = self.modes(iBits(1:2, 4));
             self.waveform = self.wvForms(iBits(3:4, 4));
             self.enabled = bitget(b(4), 5);
             self.info.Model = self.models(iBits(6:8, 4));
             self.info.SerialNo = b(5:7)*256.^[2 1 0]';
             self.temperature = b(8);
-            try self.info.CoilType = self.coils(b(9));
+            coils = containers.Map([60 72], {"Cool-B65" "C-B60"}); % can add more
+            try self.info.CoilType = coils(b(9));
             catch, self.info.CoilType = string(b(9)); % not in container
             end
             self.amplitude = b(10:11);
           case 1
             self.amplitude = b(4:5);
-            self.info.Mode = self.modes(iBits(1:2, 6));
+            self.mode = self.modes(iBits(1:2, 6));
             self.waveform = self.wvForms(iBits(3:4, 6));
             self.enabled = bitget(b(6), 5);
             self.info.Model = self.models(iBits(6:8, 6));
           case 2
             self.didt = b(4:5);
-            self.info.Mode = self.modes(iBits(1:2, 6));
+            self.mode = self.modes(iBits(1:2, 6));
             self.waveform = self.wvForms(iBits(3:4, 6));
             self.enabled = bitget(b(6), 5);
             self.info.Model = self.models(iBits(6:8, 6));
           case {3 6}
             self.temperature = b(4);
-            self.info.Mode = self.modes(iBits(1:2, 6));
+            self.mode = self.modes(iBits(1:2, 6));
             self.waveform = self.wvForms(iBits(3:4, 6));
             self.enabled = bitget(b(6), 5);
             self.info.Model = self.models(iBits(6:8, 6));
@@ -417,19 +465,21 @@ classdef TMS < handle
             self.MEP.maxTime = b(12:15)*256.^(3:-1:0)'; % in µs
           case 8
             self.train.isRunning = b(5);
-            self.info.Mode = self.modes(iBits(1:2, 6));
+            self.mode = self.modes(iBits(1:2, 6));
             self.waveform = self.wvForms(iBits(3:4, 6));
             self.enabled = bitget(b(6), 5);
             self.info.Model = self.models(iBits(6:8, 6));
           case 9
             self.raw9 = b(5:13); % for setParam9
             self.info.Model = self.models(b(5)+1);
-            self.info.Mode = self.modes(b(6)+1);
+            self.mode = self.modes(b(6)+1);
             self.currentDirection = self.curDirs(b(7)+1);
             self.waveform = self.wvForms(b(8)+1);
             self.burstPulses = 5 - b(9);
             if self.waveform == "Biphasic Burst"
-              try self.IPI = self.IPIs(b(10)+1); catch, end % b(11) for other modes?
+              self.IPI = self.IPIs(b(11)*256+b(10)+1);
+            end
+            if startsWith(self.waveform, "Biphasic")
               self.BARatio = 5 - b(12)*0.05;
             end
           case 10
