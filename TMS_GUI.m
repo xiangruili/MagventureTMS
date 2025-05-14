@@ -34,10 +34,10 @@ if isempty(fh) && nargin, return; end
 if isempty(fh), fh = createGUI; end
 T = TMS;
 hs = guidata(fh);
-fh.Name = "Magventure "+T.info.Model+" ("+T.info.Mode+"): "+T.filename;
+fh.Name = "Magventure "+T.info.Model+": "+T.filename;
 hs.enabled.Visible = OnOff(T.enabled);
 hs.amplitude.Value = T.amplitude(1);
-if T.info.Model ~= "X100+Option", hs.waveform.Items = T.wvForms([1 2 4]); end
+if ~contains(T.info.Model, "+Option"), hs.waveform.Items = T.wvForms([1 2 4]); end
 hs.waveform.Value = T.waveform;
 hs.currentDirection.Value = T.currentDirection;
 hs.burstPulses.Value = string(T.burstPulses);
@@ -57,6 +57,7 @@ else, hs.fireTrain.Text = "Start Train";
 end
  
 set([hs.fire hs.fireTrain], "Enable", OnOff(T.enabled && T.amplitude(1)>0));
+set(hs.mode, "Enable", OnOff(contains(T.info.Model, "+Option")));
 try hs.IPI.Parent.Enable = OnOff(T.waveform == "Biphasic Burst"); end %#ok
  
 if T.temperature>40, hs.temperature.BackgroundColor = 'r';
@@ -97,26 +98,26 @@ uimenu(hHelp, 'Text', 'Help about TMS class', 'MenuSelectedFcn', 'doc TMS');
 uimenu(hHelp, 'Text', 'Help about TMS_GUI', 'MenuSelectedFcn', 'doc TMS_GUI');
  
 uilabel(fh, 'Text', 'Disabled', 'FontWeight', 'bold', ...
-    'HorizontalAlignment', 'center', 'BackgroundColor', 'r', 'Position', [158 352 62 32]);
+    'HorizontalAlignment', 'center', 'BackgroundColor', 'r', 'Position', [31 354 62 32]);
 hs.enabled = uilabel(fh, 'Text', 'Enabled', 'FontWeight', 'bold', 'Visible', 'off', ...
-    'HorizontalAlignment', 'center', 'BackgroundColor', 'g', 'Position', [158 352 62 32]);
+    'HorizontalAlignment', 'center', 'BackgroundColor', 'g', 'Position', [31 354 62 32]);
  
 h = uibutton(fh, 'push');
 h.Text = char(11096); % char(0x23FB) for power button
 h.FontSize = 14;
-h.Position = [224 352 32 32];
+h.Position = [94 354 32 32];
 h.ButtonPushedFcn = "T=TMS;T.enable(~T.enabled);";
 h.Tooltip = {'Push to enable/disable stimulation'};
  
 hs.fire = uibutton(fh, 'push', 'ButtonPushedFcn', 'T=TMS;T.firePulse;', ...
     'FontWeight', 'bold', 'Text', 'Single Pulse', ...
-    'Tooltip', {'Fire a pulse or burst'}, 'Position', [158 310 98 32]);
+    'Tooltip', {'Fire a pulse or burst'}, 'Position', [158 354 98 32]);
  
 uibutton(fh, 'push', 'ButtonPushedFcn', @(~,~)motorThreshold, 'Text', 'Motor Threshold', ...
-    'Tooltip', {'Start motor threshold estimate'}, 'Position', [158 268 98 32]);
+    'Tooltip', {'Start motor threshold estimate'}, 'Position', [158 310 98 32]);
 
 uibutton(fh, 'push', 'ButtonPushedFcn', @EMG_check, 'Text', 'EMG Check', ...
-    'Tooltip', {'Show continuous EMG trace'}, 'Position', [48 268 88 32]);
+    'Tooltip', {'Show continuous EMG trace'}, 'Position', [31 310 88 32]);
 
 % Coil panel
 hPanel = uipanel(fh, 'TitlePosition', 'centertop', 'Title', 'Coil Status', ...
@@ -154,8 +155,18 @@ hPanel = uipanel(fh);
 hPanel.TitlePosition = 'centertop';
 hPanel.Title = 'Basic Control';
 hPanel.FontWeight = 'bold';
-hPanel.Position = [31 135 230 120];
+hPanel.Position = [31 135 230 152];
  
+% mode
+h = uilabel(hPanel);
+h.HorizontalAlignment = 'right';
+h.Position = [47 95 80 22];
+h.Text = 'Mode';
+h.Tooltip = {'Stimulator mode value other than "Standard" only avaialbe for MagOption'};
+hs.mode = uidropdown(hPanel, 'Position', [136 95 84 22], ...
+    'Items', TMS.modes, 'Value', 'Standard', 'BackgroundColor',  [1 1 1],...
+    'ValueChangedFcn', @(~,e)evalin("base","T=TMS;T.setMode('"+e.Value+"');"));
+
 % amplitude
 h = uilabel(hPanel);
 h.HorizontalAlignment = 'right';
@@ -172,7 +183,7 @@ h.HorizontalAlignment = 'right';
 h.Position = [44 39 59 22];
 h.Text = 'Waveform';
 hs.waveform = uidropdown(hPanel, 'Position', [110 39 110 22], ...
-    'Items', TMS.wvForms, 'Value', 'Biphasic', ...
+    'Items', TMS.wvForms, 'Value', 'Biphasic', 'BackgroundColor',  [1 1 1], ...
     'ValueChangedFcn', @(~,e)evalin("base","T=TMS;T.setWaveform('"+e.Value+"');"));
 
 % Current Direction
@@ -181,7 +192,7 @@ h.HorizontalAlignment = 'right';
 h.Position = [36 10 96 22];
 h.Text = 'Current Direction';
 hs.currentDirection = uidropdown(hPanel, 'Items', TMS.curDirs, ...
-    'Value', 'Normal', 'Position',  [140 10 80 22], ...
+    'Value', 'Normal', 'Position',  [140 10 80 22], 'BackgroundColor',  [1 1 1], ...
     'ValueChangedFcn', @(~,o)evalin("base","T=TMS;T.setCurrentDirection('"+o.Value+"');"));
  
 % Burst Panel
@@ -195,7 +206,7 @@ hPanel.Tooltip = {'Only active with Waveform of "Biphasic Burst"'};
 % burstPulses
 h = uilabel(hPanel, 'HorizontalAlignment', 'right', 'Position', [102 42 72 22], ...
     'Text', 'Burst Pulses', 'Tooltip', {'Number of pulses in a burst'});
-hs.burstPulses = uidropdown(hPanel, 'Items', {'5' '4' '3' '2'}, ...
+hs.burstPulses = uidropdown(hPanel, 'Items', {'5' '4' '3' '2'}, 'BackgroundColor',  [1 1 1], ...
     'Tooltip', h.Tooltip, 'Position', [181 42 42 22], 'Value', '2', ...
     'ValueChangedFcn', @(~,o)evalin("base","T=TMS;T.setBurstPulses("+o.Value+");"));
  
