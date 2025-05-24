@@ -1,9 +1,10 @@
-# Magventure TMS Control from Matlab (version 2025.05.13)
+# Magventure TMS Control from Matlab (version 2025.05.24)
 [![View xiangruili/dicm2nii on File Exchange](https://www.mathworks.com/matlabcentral/images/matlab-file-exchange.svg)](https://www.mathworks.com/matlabcentral/fileexchange/180628-magventuretms)
 [![Open in MATLAB Online](https://www.mathworks.com/images/responsive/global/open-in-matlab-online.svg)](https://matlab.mathworks.com/open/github/v1?repo=xiangruili/MagventureTMS)
 
 # TMS
-Object-oriented code to fully control the Magventure TMS. No special toolbox is needed.
+Object-oriented code to fully control the Magventure TMS.
+Work for Matlab 2019b or later (no special toolbox needed).
 
 Hardware requirement: serial port connection between TMS machine and the host computer. 
 3-wire connection is sufficient: GND, TXD->RXD, RXD->TXD
