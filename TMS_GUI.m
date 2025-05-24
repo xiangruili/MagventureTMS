@@ -4,26 +4,32 @@ function TMS_GUI(varargin)
 % While TMS class works independently from command line, TMS_GUI is only an
 % interface to show and control the stimulator through TMS class.
 % 
-% The control panel contains help information for each parameter and button. By
+% The control panel contains help information for each parameter and item. By
 % hovering mouse on an item for a second, the help will show up.
 % 
-% The Coil Status panel is information only. The coil temperature and di/dt will
-% update when stimulation is applied.
+% The Coil Status panel is information only, and thje coil temperature and di/dt
+% will update after stimulation is applied.
 % 
-% The Basic Control contains Amplitude, Waveform and Current Direction. The
+% The Basic Control contains Amplitude, Mode, Waveform and Current Direction. The
 % Burst Parameter panel is active only for Waveform of Biphasic Burst.
 % 
-% Any Basic and Burst parameter change will be effective immediately onto the
-% stimulator. However, the Train parameters will be sent only after Set Train
+% Any Basic and Burst parameter change will be effective immediately at the
+% stimulator, while the Train parameters will be sent only after "Set Train"
 % button is pressed.
 %
-% The "Motor Threshold" button will start motor threshold estimate. See help for
-% motorThreshold for details.
+% The "Motor Threshold" button will start motor threshold estimation. See help
+% for motorThreshold for details.
 %
-% From File menu, one can save all the parameters to a file, so they can be
-% loaded for the future sessions. The "Load" function will send all parameters
-% to the stimulator. Then once the desired amplitude is set, it is ready to
-% fire a "Single pulse" or "Start Train".
+% From File menu, the parameters can be saved to a file, so they can be loaded
+% for the future sessions. The "Load" function will send all parameters to the
+% stimulator. Then once the desired amplitude is set, it is ready to fire a
+% "Single pulse" or "Start Train".
+% 
+% From Serial menu, one can Resync status from the stimulator, in case a
+% parameter is changed at the stimulator (strongly discouraged). One can also
+% Disconnect the serial connection to the stimulator, and this is necessary if
+% another program, e.g. Eprime, will trigger the stimulation after all
+% parameters are set.
 % 
 %  See also motorThreshold
  
@@ -34,18 +40,22 @@ if isempty(fh) && nargin, return; end
 if isempty(fh), fh = createGUI; end
 T = TMS;
 hs = guidata(fh);
-fh.Name = "Magventure "+T.info.Model+": "+T.filename;
+[~, fName] = fileparts(T.filename);
+fh.Name = "Magventure "+T.Model+" "+fName;
 hs.enabled.Visible = OnOff(T.enabled);
 hs.amplitude.Value = T.amplitude(1);
-if ~contains(T.info.Model, "+Option"), hs.waveform.Items = T.wvForms([1 2 4]); end
+hs.waveform.Items = T.wvForms.values;
 hs.waveform.Value = T.waveform;
+hs.currentDirection.Items = T.curDirs.values;
 hs.currentDirection.Value = T.currentDirection;
 hs.burstPulses.Value = string(T.burstPulses);
 hs.IPI.Value = T.IPI;
+hs.IPI.Limits = T.IPIs([end 1]);
 hs.CoilType.Value = T.info.CoilType;
 hs.temperature.Value = T.temperature;
 hs.didt.Value = T.didt(1);
 hs.RepRate.Value = T.train.RepRate;
+hs.RepRate.Limits = T.RATEs([1 end]);
 hs.PulsesInTrain.Value = T.train.PulsesInTrain;
 hs.NumberOfTrains.Value = T.train.NumberOfTrains;
 hs.ITI.Value = T.train.ITI;
@@ -57,7 +67,6 @@ else, hs.fireTrain.Text = "Start Train";
 end
  
 set([hs.fire hs.fireTrain], "Enable", OnOff(T.enabled && T.amplitude(1)>0));
-set(hs.mode, "Enable", OnOff(contains(T.info.Model, "+Option")));
 try hs.IPI.Parent.Enable = OnOff(T.waveform == "Biphasic Burst"); end %#ok
  
 if T.temperature>40, hs.temperature.BackgroundColor = 'r';
@@ -89,9 +98,10 @@ uimenu(hFile, 'Label', '&Load', 'MenuSelectedFcn', 'T=TMS;T.load;', ...
     'Tooltip', 'Load and set parameters from .mat or .CG3 file to stimulator');
 uimenu(hFile, 'Label', '&Save', 'MenuSelectedFcn', 'T=TMS;T.save;', ...
     'Tooltip', 'Save parameters for future to load from');
-uimenu(hFile, 'Label', '&Resync', 'MenuSelectedFcn', 'T=TMS;T.resync;', ...
+hSeri = uimenu(fh, 'Text', '&Serial');
+uimenu(hSeri, 'Label', '&Resync', 'MenuSelectedFcn', 'T=TMS;T.resync;', ...
     'Tooltip', 'Update parameters from stimulator');
-uimenu(hFile, 'Label', '&Disconnect', 'MenuSelectedFcn', 'clear TMS;', ...
+uimenu(hSeri, 'Label', '&Disconnect', 'MenuSelectedFcn', 'clear TMS;', ...
     'Tooltip', 'Disconnect to allow other app to connect');
 hHelp = uimenu(fh, 'Text', '&Help');
 uimenu(hHelp, 'Text', 'Help about TMS class', 'MenuSelectedFcn', 'doc TMS');
@@ -157,33 +167,33 @@ hPanel.Title = 'Basic Control';
 hPanel.FontWeight = 'bold';
 hPanel.Position = [31 135 230 152];
  
-% mode
-h = uilabel(hPanel);
-h.HorizontalAlignment = 'right';
-h.Position = [47 95 80 22];
-h.Text = 'Mode';
-h.Tooltip = {'Stimulator mode value other than "Standard" only avaialbe for MagOption'};
-hs.mode = uidropdown(hPanel, 'Position', [136 95 84 22], ...
-    'Items', TMS.modes, 'Value', 'Standard', 'BackgroundColor',  [1 1 1],...
-    'ValueChangedFcn', @(~,e)evalin("base","T=TMS;T.setMode('"+e.Value+"');"));
-
 % amplitude
 h = uilabel(hPanel);
 h.HorizontalAlignment = 'right';
-h.Position = [78 67 80 22];
+h.Position = [78 95 80 22];
 h.Text = 'Amplitude (%)';
 h.Tooltip = {'Stimulation amplitude in percent'};
 hs.amplitude = uispinner(hPanel, 'Limits', [0 100], 'RoundFractionalValues', 'on', ...
     'ValueChangedFcn', @(h,~)evalin("base","T=TMS;T.setAmplitude("+h.Value+");"), ...
-    'Tooltip', h.Tooltip, 'Position',  [167 67 53 22]);
+    'Tooltip', h.Tooltip, 'Position',  [167 95 53 22]);
  
+% mode
+h = uilabel(hPanel);
+h.HorizontalAlignment = 'right';
+h.Position = [47 67 80 22];
+h.Text = 'Mode';
+h.Tooltip = {'Stimulator mode value other than "Standard" only available for MagOption'};
+hs.mode = uidropdown(hPanel, 'Position', [136 67 84 22], ...
+    'Items', "Standard", 'Value', 'Standard', 'BackgroundColor',  [1 1 1],...
+    'ValueChangedFcn', @(~,e)evalin("base","T=TMS;T.setMode('"+e.Value+"');"));
+
 % Waveform
 h = uilabel(hPanel);
 h.HorizontalAlignment = 'right';
 h.Position = [44 39 59 22];
 h.Text = 'Waveform';
 hs.waveform = uidropdown(hPanel, 'Position', [110 39 110 22], ...
-    'Items', TMS.wvForms, 'Value', 'Biphasic', 'BackgroundColor',  [1 1 1], ...
+    'Items', "Biphasic", 'Value', 'Biphasic', 'BackgroundColor',  [1 1 1], ...
     'ValueChangedFcn', @(~,e)evalin("base","T=TMS;T.setWaveform('"+e.Value+"');"));
 
 % Current Direction
@@ -191,7 +201,7 @@ h = uilabel(hPanel);
 h.HorizontalAlignment = 'right';
 h.Position = [36 10 96 22];
 h.Text = 'Current Direction';
-hs.currentDirection = uidropdown(hPanel, 'Items', TMS.curDirs, ...
+hs.currentDirection = uidropdown(hPanel, 'Items', ["Normal" "Reverse"], ...
     'Value', 'Normal', 'Position',  [140 10 80 22], 'BackgroundColor',  [1 1 1], ...
     'ValueChangedFcn', @(~,o)evalin("base","T=TMS;T.setCurrentDirection('"+o.Value+"');"));
  
