@@ -41,9 +41,13 @@ if isempty(fh), fh = createGUI; end
 T = TMS;
 hs = guidata(fh);
 [~, fName] = fileparts(T.filename);
-fh.Name = "Magventure "+T.Model+" "+fName;
+if T.Model=="", fh.Name = "NotConnected "+fName;
+else, fh.Name = "Magventure "+T.Model+" "+fName;
+end
 hs.enabled.Visible = OnOff(T.enabled);
 hs.amplitude.Value = T.amplitude(1);
+hs.mode.Items = T.modes.values;
+hs.mode.Value = T.mode;
 hs.waveform.Items = T.wvForms.values;
 hs.waveform.Value = T.waveform;
 hs.currentDirection.Items = T.curDirs.values;
@@ -89,7 +93,7 @@ if tf, st = "on"; else, st = "off"; end
 function fh = createGUI()
 % Create uifigure and hide until all components are created
 fh = uifigure('Visible', 'off', 'AutoResizeChildren', 'off', ...
-    'Position', [100 100 489 406], 'Name', 'Magventure', ...
+    'Position', [100 100 489 406], 'Name', '', ...
     'Resize', 'off', 'Tag', 'MagventureGUI');
 try fh.Icon = fullfile(fileparts(mfilename('fullpath')), 'CoilIcon.png'); end %#ok
  
