@@ -81,7 +81,10 @@ classdef TMS < handle
     filename = "";
 
     % Some info about the stimulator,like SerialNo, Connected coil, etc.
-    info = struct("CoilType", "") % ? means not connected
+    info = struct("CoilType", "")
+
+    % TMS.m version
+    version = "2025.05.30"
   end
   properties
     % Parameters related to train: settable directly
@@ -109,13 +112,14 @@ classdef TMS < handle
         pause(0.1);
         if p.NumBytesAvailable<13, delete(p); continue; else, break; end
       end
-      % if ~isvalid(p), OBJ = self; return; end % test without device connected
-      assert(exist('p','var') && isvalid(p), "Failed to connect to TMS machine.");
-      self.port = p;
       addlistener(self, {'Model' 'mode' 'waveform'}, 'PostSet', @(~,~)setScales(self));
-      configureCallback(p, "byte", 8, @(~,~)decodeBytes(self));
-      CLN = onCleanup(@()delete(p));
       OBJ = self;
+      if ~exist('p','var') || ~isvalid(p)
+          fprintf(2, " Failed to connect to TMS machine.\n"); return;
+      end
+      configureCallback(p, "byte", 8, @(~,~)decodeBytes(self));
+      self.port = p;
+      CLN = onCleanup(@()delete(p));
       self.resync;
     end
 
@@ -358,8 +362,9 @@ classdef TMS < handle
 
   methods (Hidden)
     function serialCmd(self, bytes)
-      self.port.write([254 numel(bytes) bytes CRC8(bytes) 255], 'uint8');
       % fprintf('Sent%s\n', sprintf(' %02X', bytes)); % for debug
+      bytes = [254 numel(bytes) bytes CRC8(bytes) 255];
+      try self.port.write(bytes, 'uint8'); catch, end
     end
 
     function setParam9(self) % Shortcut to set parameters via commandID=9
@@ -561,4 +566,4 @@ function d = dict(vals, keys)
 end
 function v = val(d, key), v = d.values(key == d.keys); end
 function k = key(d, val), k = d.keys(val == d.values); end
-function L = list(d), L = join(d.values, ', '); end
+function L = list(d), L = '"'+join(d.values, '", "')+'"'; end
