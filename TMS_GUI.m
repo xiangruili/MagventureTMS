@@ -38,7 +38,7 @@ function TMS_GUI(varargin)
 fh = findall(0, 'Type', 'figure', 'Tag', 'MagventureGUI');
 if isempty(fh) && nargin, return; end
 if isempty(fh), fh = createGUI; end
-T = TMS.init;
+T = TMS;
 hs = guidata(fh);
 [~, fName] = fileparts(T.filename);
 if T.Model=="", fh.Name = "NotConnected "+fName;
@@ -98,14 +98,14 @@ fh = uifigure('Visible', 'off', 'AutoResizeChildren', 'off', ...
 try fh.Icon = fullfile(fileparts(mfilename('fullpath')), 'CoilIcon.png'); end %#ok
  
 hFile = uimenu(fh, 'Text', '&File');
-uimenu(hFile, 'Label', '&Load', 'MenuSelectedFcn', 'T=TMS.init;T.load;', ...
+uimenu(hFile, 'Label', '&Load', 'MenuSelectedFcn', 'T=TMS;T.load;', ...
     'Tooltip', 'Load and set parameters from .mat or .CG3 file to stimulator');
-uimenu(hFile, 'Label', '&Save', 'MenuSelectedFcn', 'T=TMS.init;T.save;', ...
+uimenu(hFile, 'Label', '&Save', 'MenuSelectedFcn', 'T=TMS;T.save;', ...
     'Tooltip', 'Save parameters for future to load from');
 hSeri = uimenu(fh, 'Text', '&Serial');
-uimenu(hSeri, 'Label', '&Resync', 'MenuSelectedFcn', 'T=TMS.init;T.resync;', ...
+uimenu(hSeri, 'Label', '&Resync', 'MenuSelectedFcn', 'T=TMS;T.resync;', ...
     'Tooltip', 'Update parameters from stimulator');
-uimenu(hSeri, 'Label', '&Disconnect', 'MenuSelectedFcn', 'T=TMS.init.init;T.delete', ...
+uimenu(hSeri, 'Label', '&Disconnect', 'MenuSelectedFcn', 'clear TMS', ...
     'Tooltip', 'Disconnect to allow other app to connect');
 hHelp = uimenu(fh, 'Text', '&Help');
 uimenu(hHelp, 'Text', 'Help about TMS class', 'MenuSelectedFcn', 'doc TMS');
@@ -120,10 +120,10 @@ h = uibutton(fh, 'push');
 h.Text = char(11096); % char(0x23FB) for power button
 h.FontSize = 14;
 h.Position = [94 354 32 32];
-h.ButtonPushedFcn = "T=TMS.init;T.enable(~T.enabled);";
+h.ButtonPushedFcn = "T=TMS;T.enable(~T.enabled);";
 h.Tooltip = {'Push to enable/disable stimulation'};
  
-hs.fire = uibutton(fh, 'push', 'ButtonPushedFcn', 'T=TMS.init;T.firePulse;', ...
+hs.fire = uibutton(fh, 'push', 'ButtonPushedFcn', 'T=TMS;T.firePulse;', ...
     'FontWeight', 'bold', 'Text', 'Single Pulse', ...
     'Tooltip', {'Fire a pulse or burst'}, 'Position', [158 354 98 32]);
  
@@ -178,7 +178,7 @@ h.Position = [78 95 80 22];
 h.Text = 'Amplitude (%)';
 h.Tooltip = {'Stimulation amplitude in percent'};
 hs.amplitude = uispinner(hPanel, 'Limits', [0 100], 'RoundFractionalValues', 'on', ...
-    'ValueChangedFcn', @(h,~)evalin("base","T=TMS.init;T.setAmplitude("+h.Value+");"), ...
+    'ValueChangedFcn', @(h,~)evalin("base","T=TMS;T.setAmplitude("+h.Value+");"), ...
     'Tooltip', h.Tooltip, 'Position',  [167 95 53 22]);
  
 % mode
@@ -189,7 +189,7 @@ h.Text = 'Mode';
 h.Tooltip = {'Stimulator mode value other than "Standard" only available for MagOption'};
 hs.mode = uidropdown(hPanel, 'Position', [136 67 84 22], ...
     'Items', "Standard", 'Value', 'Standard', 'BackgroundColor',  [1 1 1],...
-    'ValueChangedFcn', @(~,e)evalin("base","T=TMS.init;T.setMode('"+e.Value+"');"));
+    'ValueChangedFcn', @(~,e)evalin("base","T=TMS;T.setMode('"+e.Value+"');"));
 
 % Waveform
 h = uilabel(hPanel);
@@ -198,7 +198,7 @@ h.Position = [44 39 59 22];
 h.Text = 'Waveform';
 hs.waveform = uidropdown(hPanel, 'Position', [110 39 110 22], ...
     'Items', "Biphasic", 'Value', 'Biphasic', 'BackgroundColor',  [1 1 1], ...
-    'ValueChangedFcn', @(~,e)evalin("base","T=TMS.init;T.setWaveform('"+e.Value+"');"));
+    'ValueChangedFcn', @(~,e)evalin("base","T=TMS;T.setWaveform('"+e.Value+"');"));
 
 % Current Direction
 h = uilabel(hPanel);
@@ -207,7 +207,7 @@ h.Position = [36 10 96 22];
 h.Text = 'Current Direction';
 hs.currentDirection = uidropdown(hPanel, 'Items', ["Normal" "Reverse"], ...
     'Value', 'Normal', 'Position',  [140 10 80 22], 'BackgroundColor',  [1 1 1], ...
-    'ValueChangedFcn', @(~,o)evalin("base","T=TMS.init;T.setCurrentDirection('"+o.Value+"');"));
+    'ValueChangedFcn', @(~,o)evalin("base","T=TMS;T.setCurrentDirection('"+o.Value+"');"));
  
 % Burst Panel
 hPanel = uipanel(fh);
@@ -222,7 +222,7 @@ h = uilabel(hPanel, 'HorizontalAlignment', 'right', 'Position', [102 42 72 22], 
     'Text', 'Burst Pulses', 'Tooltip', {'Number of pulses in a burst'});
 hs.burstPulses = uidropdown(hPanel, 'Items', {'5' '4' '3' '2'}, 'BackgroundColor',  [1 1 1], ...
     'Tooltip', h.Tooltip, 'Position', [181 42 42 22], 'Value', '2', ...
-    'ValueChangedFcn', @(~,o)evalin("base","T=TMS.init;T.setBurstPulses("+o.Value+");"));
+    'ValueChangedFcn', @(~,o)evalin("base","T=TMS;T.setBurstPulses("+o.Value+");"));
  
 % IPI
 h = uilabel(hPanel);
@@ -231,7 +231,7 @@ h.Position = [54 11 132 22];
 h.Text = 'Inter Pulse Interval (ms)';
 h.Tooltip = {'Duration between the beginning of the first pulse to the beginning of the second pulse'};
 hs.IPI = uieditfield(hPanel, 'numeric', 'Limits', [0.5 100], ...
-    'ValueChangedFcn', @(~,o)evalin("base","T=TMS.init;T.setIPI("+o.Value+");"), ...
+    'ValueChangedFcn', @(~,o)evalin("base","T=TMS;T.setIPI("+o.Value+");"), ...
     'Tooltip', h.Tooltip, 'Position', [192 11 31 22], 'Value', 10);
  
 % Train Panel
@@ -254,7 +254,7 @@ hs.RepRate.Tooltip = h.Tooltip;
 hs.RepRate.Position = [125 183 36 22];
 hs.RepRate.Value = 1;
 hs.RepRate.ValueDisplayFormat = '%.4g';
-hs.RepRate.ValueChangedFcn = @(o,~)evalin("base","T=TMS.init;T.train.RepRate="+o.Value+";");
+hs.RepRate.ValueChangedFcn = @(o,~)evalin("base","T=TMS;T.train.RepRate="+o.Value+";");
  
 % PulsesinTrain
 h = uilabel(trainPanel);
@@ -268,7 +268,7 @@ hs.PulsesInTrain.RoundFractionalValues = 'on';
 hs.PulsesInTrain.Tooltip = h.Tooltip;
 hs.PulsesInTrain.Position = [125 155 36 22];
 hs.PulsesInTrain.Value = 5;
-hs.PulsesInTrain.ValueChangedFcn = @(o,~)evalin("base","T=TMS.init;T.train.PulsesInTrain="+o.Value+";");
+hs.PulsesInTrain.ValueChangedFcn = @(o,~)evalin("base","T=TMS;T.train.PulsesInTrain="+o.Value+";");
  
 % NumberOfTrains
 h = uilabel(trainPanel);
@@ -282,7 +282,7 @@ hs.NumberOfTrains.RoundFractionalValues = 'on';
 hs.NumberOfTrains.Tooltip = h.Tooltip;
 hs.NumberOfTrains.Position = [125 127 36 22];
 hs.NumberOfTrains.Value = 3;
-hs.NumberOfTrains.ValueChangedFcn = @(o,~)evalin("base","T=TMS.init;T.train.NumberOfTrains="+o.Value+";");
+hs.NumberOfTrains.ValueChangedFcn = @(o,~)evalin("base","T=TMS;T.train.NumberOfTrains="+o.Value+";");
  
 % ITI
 h = uilabel(trainPanel);
@@ -298,7 +298,7 @@ hs.ITI.Tooltip = h.Tooltip;
 hs.ITI.Position = [125 99 36 22];
 hs.ITI.Value = 1;
 hs.ITI.ValueDisplayFormat = '%.4g';
-hs.ITI.ValueChangedFcn = @(o,~)evalin("base","T=TMS.init;T.train.ITI="+o.Value+";");
+hs.ITI.ValueChangedFcn = @(o,~)evalin("base","T=TMS;T.train.ITI="+o.Value+";");
  
 % PriorWarningSound
 h = uilabel(trainPanel);
@@ -311,7 +311,7 @@ hs.PriorWarningSound.Tooltip = h.Tooltip;
 hs.PriorWarningSound.Text = '';
 hs.PriorWarningSound.Position = [146 71 22 22];
 hs.PriorWarningSound.Value = true;
-hs.PriorWarningSound.ValueChangedFcn = @(o,~)evalin("base","T=TMS.init;T.train.PriorWarningSound="+o.Value+";");
+hs.PriorWarningSound.ValueChangedFcn = @(o,~)evalin("base","T=TMS;T.train.PriorWarningSound="+o.Value+";");
  
 % TotalTime
 h = uilabel(trainPanel);
@@ -328,13 +328,13 @@ hs.TotalTime.Value = '00:17';
 hs.TotalTime.HorizontalAlignment = 'right';
  
 hs.fireTrain = uibutton(trainPanel, 'push');
-hs.fireTrain.ButtonPushedFcn = "T=TMS.init;T.fireTrain;";
+hs.fireTrain.ButtonPushedFcn = "T=TMS;T.fireTrain;";
 hs.fireTrain.Tooltip = {'Start / Stop train sequence'};
 hs.fireTrain.Position = [92 10 64 22];
 hs.fireTrain.Text = 'Start Train';
  
 hs.setTrain = uibutton(trainPanel, 'push');
-hs.setTrain.ButtonPushedFcn = 'T=TMS.init;T.setTrain;';
+hs.setTrain.ButtonPushedFcn = 'T=TMS;T.setTrain;';
 hs.setTrain.Tooltip = {'Send train parameters to stimulator '};
 hs.setTrain.Position = [12 10 64 22];
 hs.setTrain.Text = 'Set Train';
