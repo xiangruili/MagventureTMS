@@ -2,7 +2,7 @@ classdef TMS < handle
 % TMS controls Magventure TMS system (tested under X100).
 %
 % Usage syntax:
-%  T = TMS.init; % Connect to stimulator and return handle for later use
+%  T = TMS; % Connect to stimulator and return handle for later use
 %  T.load('myParams.mat'); % load pre-saved stimulation parameters
 %  T.enable; % Enable it like pressing the button at stimulator
 %  T.setAmplitude(40); % set amplitude to 40%
@@ -25,7 +25,7 @@ classdef TMS < handle
         "Treatment" "Treat Select" "Service2" "Calculator"], [1:4 6:8 13 15:17 19])
   end
   properties (Hidden, SetAccess=private, Transient)
-    port = []
+    port(1,1)
     raw9(1,9) uint8 % store parameters for setParam9()
     modes = dict(["Standard" "Power" "Twin" "Dual"])
     curDirs = dict(["Normal" "Reverse"])
@@ -100,17 +100,11 @@ classdef TMS < handle
       'TotalTime', "00:09") % Total time to run the sequence, based on train parameters
   end
 
-  % this property is set even when "help TMS". So avoid hardware operation
-  properties (Access=private, Constant), myInstance = TMS; end
-  % dummy constructor: only here to prevent user from accessing
-  methods (Access=protected) function obj = TMS(); end end
-  methods (Static) % trick for single instance without creating one
-    function self = init() % effective constructor
-      % T = TMS.init; % Connect to Magventure stimulator
-      self = TMS.myInstance;
-      if ~isempty(self.port), return; end
-      % warning("off", "serialport:serialport:ReadWarning");
-      p = 1;
+  methods
+    function self = TMS()
+      % T = TMS; % Connect to Magventure stimulator
+      persistent OBJ CLN
+      if isobject(OBJ) && isvalid(OBJ), self = OBJ; return; end
       for port = flip(serialportlist("available"))
         p = serialport(port, 38400, "Timeout", 0.3);
         p.write([254 1 0 0 255], 'uint8');
@@ -118,19 +112,15 @@ classdef TMS < handle
         if p.NumBytesAvailable<13, delete(p); continue; else, break; end
       end
       addlistener(self, {'Model' 'mode' 'waveform'}, 'PostSet', @(~,~)setScales(self));
-      self.port = p; % valid/deleted port, or 1
-      try configureCallback(p, "byte", 8, @(~,~)read(self));
-      catch, fprintf(2, " Failed to connect to stimulator.\n");
+      OBJ = self;
+      try
+        configureCallback(p, "byte", 8, @(~,~)read(self));
+        CLN = onCleanup(@()self.disconnect);
+        self.port = p;
+        self.resync;
+      catch
+        fprintf(2, " Failed to connect to stimulator.\n");
       end
-      self.resync;
-    end
-  end
-
-  methods
-    function delete(self)
-      % Remove object and release associated serial port
-      try delete(self.port); catch, end
-      try delete@handle(self); catch, end
     end
 
     function firePulse(self)
@@ -528,6 +518,11 @@ classdef TMS < handle
       if exist('TMS_GUI', 'file')==2, TMS_GUI("update"); end
     end
 
+    function disconnect(self)
+      try self.port.delete; catch, end
+      try self.delete; catch, end
+    end
+
     % Override to hide inherited methods: cleaner for usage & doc
     function lh = addlistener(varargin); lh=addlistener@handle(varargin{:}); end
     function lh = listener(varargin); lh=listener@handle(varargin{:}); end
@@ -540,6 +535,7 @@ classdef TMS < handle
     function TF = gt(varargin); TF = gt@handle(varargin{:}); end
     function TF = ge(varargin); TF = ge@handle(varargin{:}); end
     function notify(varargin); notify@handle(varargin{:}); end
+    function delete(varargin); delete@handle(varargin{:}); end
   end
 end
 
