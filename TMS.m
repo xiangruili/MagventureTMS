@@ -2,7 +2,7 @@ classdef TMS < handle
 % TMS controls Magventure TMS system (tested under X100).
 %
 % Usage syntax:
-%  T = TMS; % Connect to TMS and return handle for later use
+%  T = TMS.init; % Connect to stimulator and return handle for later use
 %  T.load('myParams.mat'); % load pre-saved stimulation parameters
 %  T.enable; % Enable it like pressing the button at stimulator
 %  T.setAmplitude(40); % set amplitude to 40%
@@ -25,7 +25,7 @@ classdef TMS < handle
         "Treatment" "Treat Select" "Service2" "Calculator"], [1:4 6:8 13 15:17 19])
   end
   properties (Hidden, SetAccess=private, Transient)
-    port(1,1)
+    port = []
     raw9(1,9) uint8 % store parameters for setParam9()
     modes = dict(["Standard" "Power" "Twin" "Dual"])
     curDirs = dict(["Normal" "Reverse"])
@@ -80,11 +80,11 @@ classdef TMS < handle
     % File name from which the parameters are loaded
     filename = "";
 
-    % Some info about the stimulator,like SerialNo, Connected coil, etc.
+    % Some info about the stimulator: SerialNo, Connected coil, etc.
     info = struct("CoilType", "")
 
     % TMS.m version
-    version = "2025.05.30"
+    version = "2025.06.02"
   end
   properties
     % Parameters related to train: settable directly
@@ -100,12 +100,17 @@ classdef TMS < handle
       'TotalTime', "00:09") % Total time to run the sequence, based on train parameters
   end
 
-  methods
-    function self = TMS() % constructor
-      % T = TMS; % Connect to Magventure stimulator
-      persistent OBJ CLN % store it for only single instance
-      if ~isempty(OBJ) && isvalid(OBJ), self = OBJ; return; end
-      warning("off", "serialport:serialport:ReadWarning");
+  % this property is set even when "help TMS". So avoid hardware operation
+  properties (Access=private, Constant), myInstance = TMS; end
+  % dummy constructor: only here to prevent user from accessing
+  methods (Access=protected) function obj = TMS(); end end
+  methods (Static) % trick for single instance without creating one
+    function self = init() % effective constructor
+      % T = TMS.init; % Connect to Magventure stimulator
+      self = TMS.myInstance;
+      if ~isempty(self.port), return; end
+      % warning("off", "serialport:serialport:ReadWarning");
+      p = 1;
       for port = flip(serialportlist("available"))
         p = serialport(port, 38400, "Timeout", 0.3);
         p.write([254 1 0 0 255], 'uint8');
@@ -113,43 +118,48 @@ classdef TMS < handle
         if p.NumBytesAvailable<13, delete(p); continue; else, break; end
       end
       addlistener(self, {'Model' 'mode' 'waveform'}, 'PostSet', @(~,~)setScales(self));
-      OBJ = self;
-      if ~exist('p','var') || ~isvalid(p)
-          fprintf(2, " Failed to connect to TMS machine.\n"); return;
+      self.port = p; % valid/deleted port, or 1
+      try configureCallback(p, "byte", 8, @(~,~)read(self));
+      catch, fprintf(2, " Failed to connect to stimulator.\n");
       end
-      configureCallback(p, "byte", 8, @(~,~)decodeBytes(self));
-      self.port = p;
-      CLN = onCleanup(@()delete(p));
       self.resync;
+    end
+  end
+
+  methods
+    function delete(self)
+      % Remove object and release associated serial port
+      try delete(self.port); catch, end
+      try delete@handle(self); catch, end
     end
 
     function firePulse(self)
       % Start single pulse or single burst stimulation
       if ~self.enabled, error("Need to enalbe"); end
-      self.serialCmd([3 1]);
+      self.write([3 1]);
     end
 
     function fireTrain(self)
       % Start train stimulation
       if ~self.enabled, error("Need to enalbe"); end
       self.setPage("Timing");
-      self.serialCmd(4);
+      self.write(4);
     end
 
     function enable(self, toEnable)
-      % T.enable; % enable TMS so it's ready to fire
+      % T.enable; % enable stimulator so it's ready to fire
       if nargin<2, toEnable = 1; end
-      self.serialCmd([2 toEnable]);
+      self.write([2 toEnable]);
     end
 
     function disable(self)
-      % T.disable; % disable TMS to avoid accidental stimulation
+      % T.disable; % disable stimulator to avoid accidental stimulation
       self.enable(0);
     end
 
     function setAmplitude(self, amp)
       % T.setAmplitude(40); % set amplitude in percent after T.enable()
-      self.serialCmd([1 uint8(amp)]);
+      self.write([1 uint8(amp)]);
     end
 
     function setTrain(self, varargin)
@@ -171,8 +181,8 @@ classdef TMS < handle
       b = uint16([S.RepRate*10 S.PulsesInTrain S.NumberOfTrains S.ITI*10]);
       tc = key(self.TCs, self.TimingControl);
       % no control for RampUp/RampUpTrains?
-      self.serialCmd([11 1 tc typecast(swapbytes(b),'uint8') S.PriorWarningSound]);
-      self.serialCmd([11 0]); % sync
+      self.write([11 1 tc typecast(swapbytes(b),'uint8') S.PriorWarningSound]);
+      self.write([11 0]); % sync
     end
 
     function setMode(self, mode)
@@ -227,7 +237,7 @@ classdef TMS < handle
       % T.setPage("Timing"); % switch to a page on device
       k = key(self.pages, page);
       if isempty(k), error("Valid Page input: %s.", list(self.pages)); end
-      self.serialCmd([7 k 0]);
+      self.write([7 k 0]);
     end
 
     function setDelay(self, in3)
@@ -240,17 +250,17 @@ classdef TMS < handle
       in3(2) = closestVal(in3(2), [-100:-10 -9.9:0.1:10 11:100]);
       in3(3) = closestVal(in3(3), [0:10:100 125:25:4000 4050:50:12000]);
       p16 = uint16(in3(:)'.*[10 10 1]);
-      self.serialCmd([10 1 typecast(swapbytes(p16),'uint8')]);
-      self.serialCmd([10 0]);
+      self.write([10 1 typecast(swapbytes(p16),'uint8')]);
+      self.write([10 0]);
     end
 
     function resync(self)
       % Update the parameters from stimulator, in case changes at stimulator
-      self.serialCmd(5); % basic info
-      self.serialCmd([9 0]); % burst parameters etc
-      self.serialCmd([10 0]); % delays
-      self.serialCmd([11 0]); % train
-      self.serialCmd([12 0]); % page, nStimuli
+      self.write(5); % basic info
+      self.write([9 0]); % burst parameters etc
+      self.write([10 0]); % delays
+      self.write([11 0]); % train
+      self.write([12 0]); % page, nStimuli
     end
 
     function save(self, fileName)
@@ -262,9 +272,11 @@ classdef TMS < handle
         if isnumeric(fNam), return; end
         fileName = fullfile(pNam, fNam);
       end
-      O = warning("off", 'MATLAB:structOnObject'); T0 = struct(self); warning(O);
-      save(fileName, "-struct", "T0", "mode", "currentDirection", "waveform", ...
-          "burstPulses", "IPI", "BARatio", "TimingControl", "delays", "train");
+      for fld = ["mode" "currentDirection" "waveform" "burstPulses" "IPI" ...
+                 "BARatio", "TimingControl", "delays", "train"]
+          T0.(fld) = self.(fld);
+      end
+      save(fileName, "-struct", "T0");
     end
 
     function load(self, fileName)
@@ -361,7 +373,7 @@ classdef TMS < handle
   end
 
   methods (Hidden)
-    function serialCmd(self, bytes)
+    function write(self, bytes)
       % fprintf('Sent%s\n', sprintf(' %02X', bytes)); % for debug
       bytes = [254 numel(bytes) bytes CRC8(bytes) 255];
       try self.port.write(bytes, 'uint8'); catch, end
@@ -370,8 +382,8 @@ classdef TMS < handle
     function setParam9(self) % Shortcut to set parameters via commandID=9
       self.raw9([7 6]) = typecast(uint16(self.IPI*10), 'uint8');
       self.raw9([9 8]) = typecast(uint16(self.BARatio*100), 'uint8');
-      self.serialCmd([9 1 self.raw9]);
-      self.serialCmd([9 0]); % sync
+      self.write([9 1 self.raw9]);
+      self.write([9 0]); % sync
     end
 
     function setScales(self) % PostSet listener for [model mode waveform]
@@ -418,7 +430,7 @@ classdef TMS < handle
       end
     end
 
-    function decodeBytes(self)
+    function read(self)
       % Update parameters from stimulator: 8+ bytes callback
       % TrigOutput enable/disable, CoilTypeDisplay on/off not in b(3) of 0:3 5 8:12
       n = 0;
@@ -528,7 +540,6 @@ classdef TMS < handle
     function TF = gt(varargin); TF = gt@handle(varargin{:}); end
     function TF = ge(varargin); TF = ge@handle(varargin{:}); end
     function notify(varargin); notify@handle(varargin{:}); end
-    function delete(obj); delete@handle(obj); end
   end
 end
 
