@@ -18,7 +18,7 @@ function motorThreshold(startAmp)
 
 % 250330 v1 by Xiangrui.Li@gmail.com
 
-T = TMS;
+T = TMS.init;
 if nargin>1
     amp = startAmp;
 else
