@@ -2,7 +2,7 @@ function motorThreshold(startAmp)
 % Start to measure motor threshold.
 %  The optional input is the start amplitude for the threshold estimation. If
 %  not provided, the current amplitude on the stimulator will be used if it is
-%  greater than 30, otherwise 60 will be the starting amplitude.
+%  greater than 30, otherwise 65 will be the starting amplitude.
 % 
 % When the popup dialog asks if you see motor response, click "Yes" or "No", and
 % the amplitude will be adjusted accordingly for the next trial. In case you are
@@ -23,9 +23,9 @@ if nargin>1
     amp = startAmp;
 else
     amp = T.amplitude(1);
-    if amp<30, amp = 60; end
+    if amp<30, amp = 65; end
 end
-T.enable;
+T.enabled = true;
 step = 4; btn0 = ''; i = 1;
 
 clear RTBoxADC;
@@ -46,7 +46,7 @@ ylim([-1 1]*3); yticks([]);
 hold on; plot(-4*[1 1], [0.8 1.8], '-k', 'LineWidth', 2); text(-3, 1.3, '1mV');
 
 while 1
-    T.setAmplitude(amp);
+    T.amplitude = amp;
     pause(2+rand*2);
     T.firePulse;
 
@@ -62,8 +62,7 @@ while 1
     end
     btn = questdlg("See motor response?", "Question", "Yes", "No", "Retry", def);
     if isempty(btn)
-        fprintf(2, 'Motor threshold test stopped.\n');
-        return;
+        break;
     elseif btn=="Retry"
         continue;
     elseif btn=="Yes"
@@ -75,4 +74,6 @@ while 1
     fprintf(" Trial %2i: amp=%2i, response=%s\n", i, T.amplitude(1), btn);
     btn0 = btn; i = i + 1;
 end
-title(h.Parent, sprintf(" Motor threshold is %i\n", thre));
+if isempty(btn), fprintf(2, 'Motor threshold test stopped.\n');
+else, title(h.Parent, sprintf(" Motor threshold is %i\n", thre));
+end
