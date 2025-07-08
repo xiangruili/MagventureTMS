@@ -5,7 +5,7 @@ classdef TMS < handle
 %  T = TMS; % Connect to stimulator and return handle for later use
 %  T.load('myParams.mat'); % load pre-saved stimulation parameters
 %  T.enabled = 1; % Enable it like pressing the button at stimulator
-%  T.amplitude = 40; % set amplitude to 40%
+%  T.amplitude = 60; % set amplitude to 60%
 %  T.firePulse; % send a single pulse/burst stimulation
 %
 %  T.waveform = "Biphasic Burst"; % set wave form
@@ -23,11 +23,9 @@ classdef TMS < handle
 
 % Some commands are figured out by testing, but undocumented by MagVenture
 % 241228 xiangrui.li@gmail.com, first working version
-% 250623 last updated
+% 250708 last updated
 
   properties (Hidden, Constant)
-    models = dict(["R30" "X100" "R30+Option" "X100+Option" "R30+Option+Mono" "MST"])
-    coils = dict(["Cool-B65" "C-B60"], [60 72]); % add more pairs
     TCs = dict(["Sequence" "External Trig" "Ext Seq. Start" "Ext Seq. Cont"])
     pages = dict(["Main" "Timing" "Trig" "Config" "Download" "Protocol" "MEP" "Service" ...
         "Treatment" "Treat Select" "Service2" "Calculator"], [1:4 6:8 13 15:17 19])
@@ -40,25 +38,22 @@ classdef TMS < handle
     wvForms = dict(["Monophasic" "Biphasic" "Halfsine" "Biphasic Burst"])
     IPIs = flip([0.5:0.1:10 10.5:0.5:20 21:100])
     RATEs = [0.1:0.1:1 2:100]
-    skipWrite = false % skip serial write to avoid set multiple times
+    ExtendedRepRate(1,1) logical % extra rates with 0.1 step
+    skipWrite = false % flag to skip serial write when true
   end
   properties
     % Stimulator is enabled or disabled
     enabled(1,1) logical
-  end
-  properties (AbortSet)
+    
     % Stimulation amplitude in percent
     amplitude(1,2) {mustBeInRange(amplitude,0,100), mustBeInteger}
-
-    % Current page on the stimulator
-    page(1,1) string = "Main"
   end
   properties (SetAccess=private)
-    % Coil temperature as shown on the stimulator
-    temperature(1,1)
-
     % Realized di/dt in A/µs, as shown on the stimulator
     didt(1,2)
+
+    % Coil temperature as shown on the stimulator
+    temperature(1,1) = 21
 
     % Information for MEP
     MEP(1,1) struct
@@ -68,6 +63,9 @@ classdef TMS < handle
 
     % File name from which the parameters are loaded
     filename(1,1) string = ""
+
+    % % Protocol Setup: currently only read from .CG3 file
+    % protocol = struct;
 
     % Stimulator model
     Model(1,1) string = "X100"
@@ -91,14 +89,18 @@ classdef TMS < handle
     % Inter pulse interval in ms. Will be adjusted to supported value
     IPI(1,1) {mustBePositive} = 10
 
-    % CoilTypeDisplay(1,1) logical = true % seem not reported, nor controllable
-
     % DelayInputTrig, DelayOutputTrig, ChargeDelay in ms
     delays(1,3)
 
     % Parameters related to train
     train = struct('TimingControl', "Sequence", 'RepRate', 1, 'PulsesInTrain', 5, ...
       'NumberOfTrains', 2, 'ITI', 1, 'PriorWarningSound', true, 'RampUp', 1, 'RampUpTrains', 10)
+
+    % Current page on the stimulator
+    page(1,1) string = "Main"
+
+    % Display coil type if true. For now must update manually if changed on Stimulator 
+    CoilTypeDisplay(1,1) logical = true
   end
 
   methods
@@ -113,28 +115,35 @@ classdef TMS < handle
         if p.NumBytesAvailable<13, delete(p); continue; else, break; end
       end
       OBJ = self;
+      CLN = onCleanup(@()self.disconnect);
       try
         self.port = p; % error if p not exist
         self.read; % error if invalid p
         self.setScales; % read() is for setScales (update IPIs)
         configureCallback(p, "byte", 8, @(~,~)read(self));
-        CLN = onCleanup(@()self.disconnect);
         self.resync;
-      catch % only warning so allow code test
+      catch % warn rather than error so code can run with no connection
         fprintf(2, ' Failed to connect to stimulator.\n');
       end
     end
 
     function firePulse(self)
       % Start single pulse or single burst stimulation
-      if ~self.enabled, error('Need to enalbe'); end
-      self.write([3 1]);
+      if ~self.enabled, error('Need to enable'); end
+      self.write(3);
     end
 
     function fireTrain(self)
       % Start train stimulation
-      if ~self.enabled, error('Need to enalbe'); end
+      if ~self.enabled, error('Need to enable'); end
       self.page = "Timing";
+      self.write(4);
+    end
+
+    function fireProtocol(self)
+      % Start stimulation in Protocol
+      if ~self.enabled, error('Need to enable'); end
+      self.page = "Protocol";
       self.write(4);
     end
 
@@ -145,7 +154,7 @@ classdef TMS < handle
 
     function set.enabled(self, tf)
       self.enabled = tf;
-      self.write([2 tf]);
+      self.write([2 self.enabled]);
     end
 
     function set.mode(self, mode)
@@ -182,13 +191,13 @@ classdef TMS < handle
 
     function set.IPI(self, ipi)
       [self.IPI, dev] = closestVal(ipi, self.IPIs);
-      if dev>0.1, warning('Actual IPI is %g', self.IPI); end
+      if dev>0.01, fprintf(2, 'Actual IPI is %g', self.IPI); end
       self.setParam9;
     end
 
     function set.BARatio(self, ratio)
       [self.BARatio, dev] = closestVal(ratio, 0.2:0.05:5);
-      if dev>0.1, warning('Actual BARatio is %g', self.BARatio); end
+      if dev>0.01, fprintf(2, 'Actual BARatio is %g', self.BARatio); end
       self.setParam9;
     end
 
@@ -196,8 +205,11 @@ classdef TMS < handle
       k = key(self.pages, page);
       if isempty(k), error('Valid page input: %s.', list(self.pages)); end
       self.page = page;
-      self.write([7 k 0]);
+      self.write([7 k]);
       self.write([12 0]);
+      if ~isequal(self.page, page)
+          error('Failed to switch to page: %s', page);
+      end
     end
 
     function set.delays(self, in3)
@@ -207,6 +219,11 @@ classdef TMS < handle
       self.delays = in3;
       self.write([10 1 quorem(in3(:)'.*[10 10 1], 256)]);
       self.write([10 0]);
+    end
+
+    function set.CoilTypeDisplay(self, tf) % set by user only for now
+      self.CoilTypeDisplay = tf;
+      self.write(0); % update info.CoilType
     end
 
     function set.train(self, S)
@@ -221,22 +238,22 @@ classdef TMS < handle
       if isfield(S, 'RepRate') && S0.RepRate ~= S.RepRate
         [val, dev] = closestVal(S.RepRate, self.RATEs); % pps
         self.train.RepRate = val;
-        if dev>0.1, warning('RepRate adjusted to %g', val); end
+        if dev>0.01, fprintf(2, 'RepRate adjusted to %g', val); end
       end
       if isfield(S, 'PulsesInTrain') && S0.PulsesInTrain ~= S.PulsesInTrain
         [val, dev] = closestVal(S.PulsesInTrain, [1:1000 1100:100:2000]);
         self.train.PulsesInTrain = val;
-        if dev>0.1, warning('PulsesInTrain adjusted to %i', val); end
+        if dev>0.01, fprintf(2, 'PulsesInTrain adjusted to %i', val); end
       end
       if isfield(S, 'NumberOfTrains') && S0.NumberOfTrains ~= S.NumberOfTrains
         [val, dev] = closestVal(S.NumberOfTrains, 1:500);
         self.train.NumberOfTrains = val;
-        if dev>0.1, warning('NumberOfTrains adjusted to %i', val); end
+        if dev>0.01, fprintf(2, 'NumberOfTrains adjusted to %i', val); end
       end
       if isfield(S, 'ITI') && S0.ITI ~= S.ITI
         [val, dev] = closestVal(S.ITI, 0.1:0.1:300);
         self.train.ITI = val;
-        if dev>0.1, warning('ITI adjusted to %g', val); end
+        if dev>0.01, fprintf(2, 'ITI adjusted to %g', val); end
       end
       if isfield(S, 'PriorWarningSound')
         self.train.PriorWarningSound = logical(S.PriorWarningSound);
@@ -244,18 +261,23 @@ classdef TMS < handle
       if isfield(S, 'RampUp') && S0.RampUp ~= S.RampUp
         [val, dev] = closestVal(S.RampUp, 0.7:0.05:1);
         self.train.RampUp = val;
-        if dev>0.1, warning('RampUp adjusted to %g', val); end
+        if dev>0.01, fprintf(2, 'RampUp adjusted to %g', val); end
       end
       if isfield(S, 'RampUpTrains') && S0.RampUpTrains ~= S.RampUpTrains
         [val, dev] = closestVal(S.RampUpTrains, 1:10);
         self.train.RampUpTrains = val;
-        if dev>0.1, warning('RampUpTrains adjusted to %i', val); end
+        if dev>0.01, fprintf(2, 'RampUpTrains adjusted to %i', val); end
       end
-      if isequal(S0, self.train), return; end % possible for partial struct input
-      self.setTrain;
+      if isequal(S0, self.train), return; end % possible if partial struct input
+      self.page = "Timing"; % save time for fireTrain()
       S = self.train;
+      tc = key(self.TCs, S.TimingControl);
+      b16 = quorem([S.RepRate*10 S.PulsesInTrain S.NumberOfTrains S.ITI*10], 256);
+      % control for RampUp/RampUpTrains not working
+      self.write([11 1 tc b16 S.PriorWarningSound S.RampUp*100 S.RampUpTrains]);
+      self.write([11 0]); % sync
       secs = ((S.PulsesInTrain-1)/S.RepRate + S.ITI) * S.NumberOfTrains - S.ITI;
-      self.info.trainTime = sprintf('%02d:%02.0f', quorem(secs, 60));
+      self.info.trainTime = sprintf('%02d:%02d', quorem(ceil(secs), 60));
     end
     
     function resync(self)
@@ -281,8 +303,8 @@ classdef TMS < handle
         if isnumeric(fNam), return; end
         fileName = fullfile(pNam, fNam);
       end
-      S = struct('mode', self.mode);
-      for fld = ["currentDirection" "waveform" "burstPulses" "IPI" "BARatio" "delays" "train"]
+      for fld = ["mode" "currentDirection" "waveform" "burstPulses" "IPI" ...
+              "BARatio" "delays" "train" "CoilTypeDisplay"] % "protocol"]
         S.(fld) = self.(fld);
       end
       save(fileName, '-struct', 'S');
@@ -306,16 +328,19 @@ classdef TMS < handle
         self.IPI = S.IPI;
         self.BARatio = S.BARatio;
         delay3 = S.delays;
-        try S.train = rmfield(S.train, ["isRunning" "TotalTime"]); end %#ok remove later
-        self.train = S.train;
+        try self.CoilTypeDisplay = S.CoilTypeDisplay; catch, end
+        % try self.protocol = S.protocol; catch, end % can remove try later
+        S = S.train;
+        try S = rmfield(S, ["isRunning" "TotalTime"]); end %#ok remove later
       elseif endsWith(fileName, '.CG3', 'IgnoreCase', true)
-        ch = fileread(fileName);
-        getval = @(k)str2double(regexp(ch,"(?<="+k+"=)\d+",'match','once'));
+        ch = regexp(fileread(fileName), '\[protocol Line \d', 'split');
+        getval = @(k)str2double(regexp(ch{1},"(?<="+k+"=)\d+",'match','once'));
         self.raw9(2:5) = [getval('Mode') getval('Current Direction') ...
             getval('Wave Form') 5-getval('Burst Pulses')];
         self.IPI = getval('Inter Pulse Interval')/10;
         self.BARatio = getval('Pulse BA Ratio')/100;
-        S.TimingControl = val(self.TCs, getval('Timing Control'));
+        self.CoilTypeDisplay = getval('Coil Type Display');
+        S = struct('TimingControl', val(self.TCs, getval('Timing Control')));
         S.RepRate = getval('Rep Rate')/10;
         S.PulsesInTrain = getval('Pulses in train');
         S.NumberOfTrains = getval('Number of Trains');
@@ -323,17 +348,34 @@ classdef TMS < handle
         S.PriorWarningSound = getval('Prior Warning Sound');
         S.RampUp = getval('RampUp')/100;
         S.RampUpTrains = getval('RampUpTrains');
-        self.train = S;
-        % getval('Trig Output'); % 1
-        delay3 = [getval('Delay Input')/10 getval('Delay Output')/10 getval('Charge Delay')];
-        % getval('Auto Discharge Time'); % 5 / 10
+        delay3 = getval({'Delay Input Trig' 'Delay Output Trig' 'Charge Delay'}) ./ [10 10 1];
+        % self.AutoDischargeTime = getval('Auto Discharge Time'); % 5 / 10
+        % self.TrigOutput = getval('Trig Output'); % 1, Enable/Disable
+        % self.TwinTrigOutput = getval('Twin Trig output'); % 0, Pulse A/B/A+B
+        % self.TwinTrigInput = getval('Twin Trig Input'); % 0, Pulse A/A+B
+        % self.PolarityInput = getval('Polarity Input'); % 0, Falling/Rising Edge
+        % self.PolarityOutput = getval('Polarity output'); % 0
+        % self.protocol = struct;
+        % for i = 1:numel(ch)-1
+        %   getval = @(k)str2double(regexp(ch{i+1},"(?<="+k+"=)\d+",'match','once'));
+        %   self.protocol(i).Delay = getval('Delay'); % ms
+        %   self.protocol(i).AmplitudeAGain = getval('Amplitude A Gain')/10;
+        %   self.protocol(i).mode = val(self.modes, getval('Mode'));
+        %   self.protocol(i).currentDirection = val(self.curDirs, getval('Current Direction'));
+        %   self.protocol(i).waveform = val(self.wvForms, getval('Wave Form'));
+        %   self.protocol(i).burstPulses = 5-getval('Burst Pulses');
+        %   self.protocol(i).IPI = getval('Inter Pulse Interval')/10;
+        %   self.protocol(i).BARatio = getval('BA Ratio')/100;
+        %   self.protocol(i).train.RepRate = getval('Repetition Rate')/10;
+        %   self.protocol(i).train.PulsesInTrain = getval('Train Pulses');
+        % end
       else, error('Unsupported file type');
       end
       self.filename = fileName;
       self.skipWrite = false;
       self.setParam9;
       self.delays = delay3;
-      self.setTrain;
+      self.train = S;
       self.resync;
     end
   end
@@ -353,56 +395,63 @@ classdef TMS < handle
       self.write([9 0]); % sync
     end
 
-    function setTrain(self, varargin) % apply train parameters to stimulator
-      % Optional input: parameters in a struct or in key/value pairs:
-      if nargin>1 % remove input in the future?
-        try S = struct(varargin{:});
-        catch, error('Parameters must be in a struct or in key/value pairs.');
+    function setScales(self) % called by setter for [mode waveform ExtendedRepRate]
+      if self.Model == "R30"
+        self.modes = dict("Standard");
+        self.curDirs = dict("Normal");
+        self.wvForms = dict("Biphasic", 1);
+        if self.ExtendedRepRate, self.RATEs = [0.1:0.1:20 21:30];
+        else, self.RATEs = [0.1:0.1:1 2:30];
         end
-        self.train = S; % setter do the check work
-      end
-      self.page = "Timing"; % show error in case of invalid parameters
-      S = self.train;
-      tc = key(self.TCs, S.TimingControl);
-      b16 = [S.RepRate*10 S.PulsesInTrain S.NumberOfTrains S.ITI*10];
-      self.write([11 1 tc quorem(b16,256) S.PriorWarningSound]);
-      self.write([11 0]); % sync
-    end
-
-    function setScales(self) % called by setter for [mode waveform]
-      if self.Model == "X100"
+      elseif self.Model == "R30+Option"
+        self.modes = dict(["Standard" "Twin" "Dual"], [0 2 3]);
+        self.curDirs = dict("Normal");
+        self.wvForms = dict(["Monophasic" "Biphasic"]);
+        if ismember(self.mode, ["Twin" "Dual"])
+          if self.ExtendedRepRate, self.RATEs = 0.1:0.1:5;
+          else, self.RATEs = [0.1:0.1:1 2:5];
+          end
+        else, self.RATEs = [0.1:0.1:1 2:30];
+        end
+      elseif self.Model == "X100"
         self.modes = dict("Standard");
         self.curDirs = dict(["Normal" "Reverse"]);
         self.wvForms = dict(["Monophasic" "Biphasic" "Biphasic Burst"], [0 1 3]);
-        if self.waveform == "Biphasic Burst", self.RATEs = [0.1:0.1:1 2:20];
-        else, self.RATEs = [0.1:0.1:1 2:100];
+        if self.waveform == "Biphasic Burst"
+          if self.ExtendedRepRate, self.RATEs = 0.1:0.1:20;
+          else, self.RATEs = [0.1:0.1:1 2:20];
+          end
+        else
+          if self.ExtendedRepRate, self.RATEs = [0.1:0.1:20 21:100];
+          else, self.RATEs = [0.1:0.1:1 2:100];
+          end
         end
       elseif self.Model == "X100+Option"
         self.modes = dict(["Standard" "Power" "Twin" "Dual"]);
         self.curDirs = dict(["Normal" "Reverse"]);
         self.wvForms = dict(["Monophasic" "Biphasic" "Halfsine" "Biphasic Burst"]);
-        if ismember(self.mode, ["Twin" "Dual"])
-          self.wvForms = dict(["Monophasic" "Biphasic" "Halfsine"]);
-          if self.waveform == "Monophasic", self.RATEs = [0.1:0.1:1 2:5];
-          else, self.RATEs = [0.1:0.1:1 2:50];
+        if self.waveform == "Biphasic Burst"
+          if self.ExtendedRepRate, self.RATEs = 0.1:0.1:20;
+          else, self.RATEs = [0.1:0.1:1 2:20];
           end
-        elseif self.waveform == "Biphasic Burst"
-          self.RATEs = [0.1:0.1:1 2:20];
-        end
-      elseif self.Model == "R30"
-        self.modes = dict("Standard");
-        self.curDirs = dict("Normal");
-        self.wvForms = dict("Biphasic", 1);
-        self.RATEs = [0.1:0.1:1 2:30];
-      elseif self.Model == "R30+Option"
-        self.modes = dict(["Standard" "Twin" "Dual"], [0 2 3]);
-        self.curDirs = dict("Normal");
-        self.wvForms = dict(["Monophasic" "Biphasic"]);
-        if ismember(self.mode, ["Twin" "Dual"]), self.RATEs = [0.1:0.1:1 2:5];
-        else, self.RATEs = [0.1:0.1:1 2:30];
+        elseif ismember(self.mode, ["Twin" "Dual"])
+          self.wvForms = dict(["Monophasic" "Biphasic" "Halfsine"]);
+          if self.waveform == "Monophasic"
+            if self.ExtendedRepRate, self.RATEs = 0.1:0.1:5;
+            else, self.RATEs = [0.1:0.1:1 2:5];
+            end
+          else
+            if self.ExtendedRepRate, self.RATEs = [0.1:0.1:20 21:50];
+            else, self.RATEs = [0.1:0.1:1 2:50];
+            end
+          end
+        else
+          if self.ExtendedRepRate, self.RATEs = [0.1:0.1:20 21:100];
+          else, self.RATEs = [0.1:0.1:1 2:100];
+          end
         end
       else
-        warning('Scales for %s is not supported for now.', self.Model);
+        fprintf(2, 'Scales for %s is not supported for now.', self.Model);
         return;
       end
 
@@ -411,6 +460,7 @@ classdef TMS < handle
         if self.waveform == "Monophasic", i0 = 2; else, i0 = 1; end
         self.IPIs = flip([i0:0.1:10 10.5:0.5:20 21:100 110:10:500 550:50:1000 1100:100:3000]);
       end
+      if exist('TMS_GUI', 'file')==2, TMS_GUI('update'); end
     end
 
     function read(self) % Update parameters from stimulator: 8+ bytes callback
@@ -424,6 +474,8 @@ classdef TMS < handle
       self.skipWrite = true; % update properties without sending to stimulator
       bytes = self.port.read(n, 'uint8');
       i0 = find(bytes==254);
+      MODELs = ["R30" "X100" "R30+Option" "X100+Option" "R30+Option+Mono" "MST"];
+      WvForms = ["Monophasic" "Biphasic" "Halfsine" "Biphasic Burst"];
       for i = 1:numel(i0)
         try b = bytes(i0(i):i0(i)+bytes(i0(i)+1)+3); catch, continue; end
         % valid packet: [254 numel(b)-4 b(3:end-2) CRC8(b(3:end-2)) 255]
@@ -434,18 +486,16 @@ classdef TMS < handle
         if b(3)==0 || b(3)==5
           iBits = @(i)bitget(b(4),i)*2.^(0:numel(i)-1)';
           self.mode = val(self.modes, iBits(1:2));
-          self.waveform = val(self.wvForms, iBits(3:4));
+          self.waveform = WvForms(1+iBits(3:4));
           self.enabled = iBits(5);
-          self.Model = val(self.models, iBits(6:8));
+          self.Model = MODELs(1+iBits(6:8));
           self.info.SerialNo = b(5:7)*256.^[2 1 0]';
           self.temperature = b(8);
-          coil = val(self.coils, b(9));
-          if isempty(coil), coil = string(b(9)); end
-          self.info.CoilType = coil;
+          self.setCoilType(b(9));
           self.amplitude = b(10:11);
           if b(3)==5 % Localite sends 5 twice a second
             % amplitudeOriginal = b(12:13);
-            % amplitudeFactor = b(14:15)/100;
+            % self.protocol(1).AmplitudeAGain = b(14)/100;
             % self.page = val(self.pages, b(16)); % not reliable for some
             self.info.trainRunning = b(17)>0;
           end
@@ -456,32 +506,30 @@ classdef TMS < handle
             self.didt = b(4:5);
           elseif b(3)==3 % enable/disable
             self.temperature = b(4);
-            coil = val(self.coils, b(5));
-            if isempty(coil), coil = string(b(5)); end
-            self.info.CoilType = coil;
+            self.setCoilType(b(5));
           elseif b(3)==6 % only at Protocol page?
             % amplitudeOriginal = b(4:5);
           elseif b(3)==7 % only at Protocol page?
-            % amplitudeFactor = b(4:5)/100;
+            % self.protocol(1).AmplitudeAGain = b(4)/100;
           elseif b(3)==8 % page change & train stim
             self.page = val(self.pages, b(4));
             self.info.trainRunning = b(5)>0;
           end
           iBits = @(i)bitget(b(6),i)*2.^(0:numel(i)-1)';
           self.mode = val(self.modes, iBits(1:2));
-          self.waveform = val(self.wvForms, iBits(3:4));
+          self.waveform = WvForms(1+iBits(3:4));
           self.enabled = iBits(5);
-          self.Model = val(self.models, iBits(6:8));
+          % self.Model = MODELs(1+iBits(6:8));
         elseif b(3)==4
           self.MEP.maxAmplitude = b(4:7)*256.^(3:-1:0)'; % in µV
           self.MEP.minAmplitude = b(8:11)*256.^(3:-1:0)';
           self.MEP.maxTime = b(12:15)*256.^(3:-1:0)'; % in µs
         elseif b(3)==9 % basic param
           self.raw9 = b(5:13); % for setParam9
-          self.Model = val(self.models, b(5));
+          % self.Model = MODELs(1+b(5));
           self.mode = val(self.modes, b(6));
           self.currentDirection = val(self.curDirs, b(7));
-          self.waveform = val(self.wvForms, b(8));
+          self.waveform = WvForms(1+b(8));
           self.burstPulses = 5 - b(9);
           if self.waveform=="Biphasic Burst", self.IPI = self.IPIs(b(11)*256+b(10)+1); end
           if self.mode=="Twin", self.BARatio = 5 - b(12)*0.05; end
@@ -489,7 +537,7 @@ classdef TMS < handle
           outDelay = double(typecast(uint8(b([8 7])), 'int16')) / 10; % signed
           self.delays = [b(5:6)*[256 1]'/10 outDelay b(9:10)*[256 1]'];
         elseif b(3)==11 % Timing menu params
-          S.TimingControl = val(self.TCs, b(5));
+          S.TimingControl = val(self.TCs, rem(b(5),4));
           S.RepRate = b(6:7)*[256 1]'/10;
           S.PulsesInTrain = b(8:9)*[256 1]';
           S.NumberOfTrains = b(10:11)*[256 1]';
@@ -498,6 +546,8 @@ classdef TMS < handle
           S.RampUp = b(15)/100;
           S.RampUpTrains = b(16);
           self.train = S; % assign once
+          self.ExtendedRepRate = bitget(b(5), 5);
+          self.setScales;
         elseif b(3)==12
           % self.train.NumberOfTrains = b(4:5)*[256 1]';
           % b(7:9)*256.^[2 1 0]': PulsesInTrain * NumberOfTrains
@@ -508,6 +558,14 @@ classdef TMS < handle
       end
       self.skipWrite = false;
       if exist('TMS_GUI', 'file')==2, TMS_GUI('update'); end
+    end
+
+    function setCoilType(self, key)
+      if ~self.CoilTypeDisplay, self.info.CoilType = ""; return; end
+      COILs = dict(["Cool-B65" "C-B60"], [60 72]); % add more pairs
+      coil = val(COILs, key);
+      if isempty(coil), coil = string(key); end
+      self.info.CoilType = coil;
     end
 
     % Override to hide inherited methods: cleaner for usage & doc
