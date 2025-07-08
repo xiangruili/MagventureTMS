@@ -43,7 +43,7 @@ hs = guidata(fh);
 if isobject(T.port) && isvalid(T.port), fh.Name = "Magventure "+T.Model+" "+fName;
 else, fh.Name = "NotConnected "+fName;
 end
-hs.enabled.Visible = OnOff(T.enabled);
+hs.enabled.Visible = T.enabled;
 hs.amplitude.Value = T.amplitude(1);
 hs.mode.Items = T.modes.values;
 hs.mode.Value = T.mode;
@@ -53,7 +53,7 @@ hs.currentDirection.Items = T.curDirs.values;
 hs.currentDirection.Value = T.currentDirection;
 hs.burstPulses.Value = T.burstPulses;
 hs.BARatio.Value = T.BARatio;
-set([hs.BARatio hs.BARatioL], 'Enable', OnOff(T.mode=="Twin"));
+set([hs.BARatio hs.BARatioL], 'Enable', T.mode=="Twin");
 hs.IPI.Value = T.IPI;
 hs.IPI.Limits = T.IPIs([end 1]);
 hs.CoilType.Value = T.info.CoilType;
@@ -66,17 +66,16 @@ hs.NumberOfTrains.Value = T.train.NumberOfTrains;
 hs.ITI.Value = T.train.ITI;
 hs.PriorWarningSound.Value = T.train.PriorWarningSound;
 hs.trainTime.Value = T.info.trainTime;
+set([hs.fire hs.fireTrain], "Enable", T.enabled && T.amplitude(1)>0);
  
-if T.info.trainRunning, hs.fireTrain.Text = "Stop Train";
-else, hs.fireTrain.Text = "Start Train";
-end
+if T.info.trainRunning, c = 'Stop Train'; else, c = 'Start Train'; end
+hs.fireTrain.Text = c;
  
-set([hs.fire hs.fireTrain], "Enable", OnOff(T.enabled && T.amplitude(1)>0));
-try hs.IPI.Parent.Enable = OnOff(T.waveform == "Biphasic Burst"); end %#ok
+if T.waveform=="Biphasic Burst", st = 'on'; else, st = 'off'; end
+hs.IPI.Parent.Enable = st;
  
-if T.temperature>40, hs.temperature.BackgroundColor = 'r';
-else, hs.temperature.BackgroundColor = [1 1 1]*0.9;
-end
+if T.temperature>40, clr = 'r'; else, clr = [1 1 1]*0.9; end
+hs.temperature.BackgroundColor = clr;
 
 %% show trace continuously
 function EMG_check(~, ~)
@@ -85,10 +84,6 @@ RTBoxADC('channel', 'dif', 200);
 RTBoxADC;
 fh = figure(3);
 fh.Position = [52 472 1200 420];
-
-%% st = matlab.lang.OnOffSwitchState(tf);
-function st = OnOff(tf) % needed for some Matlab version, like 2020b
-if tf, st = "on"; else, st = "off"; end
 
 %% callback for most UI components
 function guiCallback(h, ~, tag)
@@ -104,8 +99,10 @@ if ~isvalid(T), fh = ancestor(h, "figure"); fh.Name = "NotConnected"; end
 %% Create GUI
 function fh = createGUI()
 % Create uifigure and hide until all components are created
-fh = uifigure('Visible', 'off', 'AutoResizeChildren', 'off', 'Icon', ones(1,1,3)*0.95, ...
-    'Name', '', 'Position', [100 100 489 406], 'Resize', 'off', 'Tag', 'MagventureGUI');
+fh = uifigure('Visible', 'off', 'AutoResizeChildren', 'off', 'Name', '', ...
+    'Position', [100 100 489 406], 'Resize', 'off', 'Tag', 'MagventureGUI');
+try fh.Icon =  [fileparts(mfilename) '/TIcon.png']; catch, end
+
 CLN = onCleanup(@()set(fh,'Visible','on')); % Show figure after done or error
 
 cb = @(tag){@guiCallback tag};
