@@ -34,13 +34,13 @@ RTBoxADC('duration', dur);
 RTBoxADC('channel', 'dif', 200);
 RTBoxADC('Start'); pause(dur+0.05);
 [y, t] = RTBoxADC('read');
-iBase = t>0.05; iResp = t>0.02 & t<0.05;
+iSig = t>0.01; iBase = t>0.05; iResp = t>0.02 & t<0.05;
 
 figure(77); clf;
 res = get(0, 'ScreenSize');
 set(gcf, 'Position', [40 res(4)-440 1200 400],  'Name', 'Motor Threshold', ...
   'ToolBar', 'none', 'MenuBar', 'none', 'NumberTitle', 'off');
-h = plot(t*1000, y);
+h = plot(t*1000, y); h.LineWidth = 1;
 ms = dur*1000; xlim([-5 ms]); xlabel('ms'); xticks(0:10:ms); 
 ylim([-1 1]*3); yticks([]);
 hold on; plot(-4*[1 1], [0.8 1.8], '-k', 'LineWidth', 2); text(-3, 1.3, '1mV');
@@ -52,6 +52,7 @@ while 1
 
     RTBoxADC('Start'); pause(dur+0.05);
     y = detrend(RTBoxADC('read') * 1000);
+    y(iSig) = bandpass(y(iSig), [5 500], 3600); % leave trigger artifact
     figure(77); h.YData = y; drawnow;
 
     ratio = std(y(iResp)) / std(y(iBase));
@@ -77,3 +78,17 @@ end
 if isempty(btn), fprintf(2, 'Motor threshold test stopped.\n');
 else, title(h.Parent, sprintf(" Motor threshold is %i\n", thre));
 end
+
+function x = bandpass(x, band, fs)
+% Apply bandpass filter to signal x (row or column vector).
+% The band input is [hp lp] in Hz, and fs is sampling rate in Hz
+%  y = bandpass(x, [5 500], fs); % hp=5Hz, lp=500Hz
+%  y = bandpass(x, [0 500], fs); % lowpass only
+%  y = bandpass(x, [5 inf], fs); % highpass only
+
+n = numel(x);
+x = fft(x);
+i = round(band/fs*n + 1);
+x([1:i(1) n+2-i(1):n]) = 0; % always remove mean: cufoff too steep? 
+if i(2)>1 && i(2)<n, x(i(2):n+2-i(2)) = 0; end
+x = real(ifft(x));
