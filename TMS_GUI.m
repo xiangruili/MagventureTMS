@@ -45,7 +45,7 @@ else, fh.Name = "NotConnected "+fName;
 end
 hs.enabled.Visible = T.enabled;
 hs.amplitude.Value = T.amplitude(1);
-hs.mode.Items = T.modes.values;
+hs.mode.Items = T.MODEs.values;
 hs.mode.Value = T.mode;
 hs.waveform.Items = T.wvForms.values;
 hs.waveform.Value = T.waveform;
@@ -65,10 +65,10 @@ hs.PulsesInTrain.Value = T.train.PulsesInTrain;
 hs.NumberOfTrains.Value = T.train.NumberOfTrains;
 hs.ITI.Value = T.train.ITI;
 hs.PriorWarningSound.Value = T.train.PriorWarningSound;
-hs.trainTime.Value = T.info.trainTime;
+hs.trainTime.Value = T.trainTime;
 set([hs.fire hs.fireTrain], "Enable", T.enabled && T.amplitude(1)>0);
  
-if T.info.trainRunning, c = 'Stop Train'; else, c = 'Start Train'; end
+if T.trainRunning, c = 'Stop Train'; else, c = 'Start Train'; end
 hs.fireTrain.Text = c;
  
 if T.waveform=="Biphasic Burst", st = 'on'; else, st = 'off'; end
@@ -94,8 +94,7 @@ elseif isprop(T, tag), T.(tag) = h.Value;
 elseif isfield(T.train, tag), T.train.(tag) = h.Value;
 else, disp(h); error("Undefined callback");
 end
-if ~isvalid(T), fh = ancestor(h, "figure"); fh.Name = "NotConnected"; end
- 
+
 %% Create GUI
 function fh = createGUI()
 % Create uifigure and hide until all components are created
@@ -108,7 +107,7 @@ CLN = onCleanup(@()set(fh,'Visible','on')); % Show figure after done or error
 cb = @(tag){@guiCallback tag};
 hFile = uimenu(fh, 'Text', '&File');
 uimenu(hFile, 'Label', '&Load', 'MenuSelectedFcn', cb("load"), ...
-    'Tooltip', 'Load and set parameters from .mat or .CG3 file to stimulator');
+    'Tooltip', 'Load and set parameters from .mat/.json/.CG3 file to stimulator');
 uimenu(hFile, 'Label', '&Save', 'MenuSelectedFcn', cb("save"), ...
     'Tooltip', 'Save parameters for future to load from');
 hSeri = uimenu(fh, 'Text', '&Serial');
@@ -245,11 +244,11 @@ hs.burstPulses = uispinner(hPanel, 'Limits', [2 5], 'RoundFractionalValues', 'on
 % IPI
 h = uilabel(hPanel);
 h.HorizontalAlignment = 'right';
-h.Position = [54 11 132 22];
+h.Position = [49 11 132 22];
 h.Text = 'Inter Pulse Interval (ms)';
 h.Tooltip = {'Duration between the beginning of the first pulse to the beginning of the second pulse'};
 hs.IPI = uieditfield(hPanel, 'numeric', 'Limits', [0.5 100], 'ValueChangedFcn', cb("IPI"), ...
-    'Tooltip', h.Tooltip, 'Position', [192 11 31 22], 'Value', 10);
+    'Tooltip', h.Tooltip, 'Position', [187 11 34 22], 'Value', 10);
  
 % Train Panel
 trainPanel = uipanel(fh);
