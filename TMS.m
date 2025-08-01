@@ -17,7 +17,7 @@ classdef TMS < handle
 %     PulsesInTrain: number of pulses or bursts in each train
 %     NumberOfTrains: number of trains in the sequence
 %     ITI: Seconds between last pulse and first pulse in next train
-%  T.fireTrain;	% Start train of pulse/burst stimulation
+%  T.fireTrain; % Start train of pulse/burst stimulation
 % 
 %  See also TMS motorThreshold
 
@@ -103,7 +103,7 @@ classdef TMS < handle
 
     % Parameters related to train
     train = struct('TimingControl', "Sequence", 'RepRate', 1, ...
-        'PulsesInTrain', 5, 'NumberOfTrains', 2, 'ITI', 1, ...
+        'PulsesInTrain', 5, 'NumberOfTrains', 3, 'ITI', 1, ...
         'PriorWarningSound', true, 'RampUp', 1, 'RampUpTrains', 10)
 
     % Current page on the stimulator
@@ -260,13 +260,13 @@ classdef TMS < handle
 
     function set.IPI(self, ipi)
       [self.IPI, dev] = closestVal(ipi, self.IPIs);
-      if dev>0.001, fprintf(2, 'Actual IPI is %g', self.IPI); end
+      if dev>0.001, fprintf(2, 'Actual IPI is %g\n', self.IPI); end
       self.setParam9;
     end
 
     function set.BARatio(self, ratio)
       [self.BARatio, dev] = closestVal(ratio, 0.2:0.05:5);
-      if dev>0.001, fprintf(2, 'Actual BARatio is %g', self.BARatio); end
+      if dev>0.001, fprintf(2, 'Actual BARatio is %g\n', self.BARatio); end
       self.setParam9;
     end
 
@@ -308,22 +308,22 @@ classdef TMS < handle
       if isfield(S, 'RepRate') && S0.RepRate ~= S.RepRate
         [val, dev] = closestVal(S.RepRate, self.RATEs); % pps
         self.train.RepRate = val;
-        if dev>0.001, fprintf(2, 'RepRate adjusted to %g', val); end
+        if dev>0.001, fprintf(2, 'RepRate adjusted to %g\n', val); end
       end
       if isfield(S, 'PulsesInTrain') && S0.PulsesInTrain ~= S.PulsesInTrain
         [val, dev] = closestVal(S.PulsesInTrain, [1:1000 1100:100:2000]);
         self.train.PulsesInTrain = val;
-        if dev>0.001, fprintf(2, 'PulsesInTrain adjusted to %i', val); end
+        if dev>0.001, fprintf(2, 'PulsesInTrain adjusted to %i\n', val); end
       end
       if isfield(S, 'NumberOfTrains') && S0.NumberOfTrains ~= S.NumberOfTrains
         [val, dev] = closestVal(S.NumberOfTrains, 1:500);
         self.train.NumberOfTrains = val;
-        if dev>0.001, fprintf(2, 'NumberOfTrains adjusted to %i', val); end
+        if dev>0.001, fprintf(2, 'NumberOfTrains adjusted to %i\n', val); end
       end
       if isfield(S, 'ITI') && S0.ITI ~= S.ITI
         [val, dev] = closestVal(S.ITI, 0.1:0.1:300);
         self.train.ITI = val;
-        if dev>0.001, fprintf(2, 'ITI adjusted to %g', val); end
+        if dev>0.001, fprintf(2, 'ITI adjusted to %g\n', val); end
       end
       if isfield(S, 'PriorWarningSound')
         self.train.PriorWarningSound = logical(S.PriorWarningSound);
@@ -331,12 +331,12 @@ classdef TMS < handle
       if isfield(S, 'RampUp') && S0.RampUp ~= S.RampUp
         [val, dev] = closestVal(S.RampUp, 0.7:0.05:1);
         self.train.RampUp = val;
-        if dev>0.001, fprintf(2, 'RampUp adjusted to %g', val); end
+        if dev>0.001, fprintf(2, 'RampUp adjusted to %g\n', val); end
       end
       if isfield(S, 'RampUpTrains') && S0.RampUpTrains ~= S.RampUpTrains
         [val, dev] = closestVal(S.RampUpTrains, 1:10);
         self.train.RampUpTrains = val;
-        if dev>0.001, fprintf(2, 'RampUpTrains adjusted to %i', val); end
+        if dev>0.001, fprintf(2, 'RampUpTrains adjusted to %i\n', val); end
       end
       if isequal(S0, self.train), return; end % possible if partial struct input
       self.page = "Timing"; % save time for fireTrain()
@@ -443,6 +443,7 @@ classdef TMS < handle
       self.delays = self.delays + 1e-6;
       self.train = S.train;
       self.resync;
+      if exist('TMS_GUI', 'file')==2, TMS_GUI('update'); end
     end
   end
 
@@ -562,7 +563,7 @@ classdef TMS < handle
     end
 
     function setCoilType(self, k)
-      if ~self.CoilTypeDisplay, coil = "";
+      if ~self.CoilTypeDisplay, coil = "Hidden";
       elseif k==60, coil = "Cool-B65";
       elseif k==72, coil = "C-B60";
       % elseif k==72, coil = ""; % add more pairs
